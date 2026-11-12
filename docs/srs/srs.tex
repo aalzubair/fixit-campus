@@ -76,7 +76,7 @@ The system supports a safe, well-maintained campus and efficient use of maintena
   \item[Risk 1: Leak of personal data] The system holds IUB ID numbers, contact details, complaint descriptions, and photos. If unauthorized people access them, users' privacy is lost and trust in the system is damaged. \textit{Addressed by:} FR-02, FR-03, FR-07 and FR-09 (access, privacy and log out rules) and the security requirements in Section 3.2.
   \item[Risk 2: A safety hazard is not seen in time] If a dangerous problem stays unnoticed, a person may be injured. \textit{Addressed by:} FR-05, FR-08, FR-11, FR-15, and the safety requirement in Section 3.2.
   \item[Risk 3: Eligible users cannot register] Users without an IUB record or a registered email or mobile number (for example new students or contract staff) cannot use the system, so problems may go unreported. \textit{Addressed by:} FR-01 Confirmation 4 and 7 (clear messages) and Assumptions 1 and 3 in Section 2.5.
-  \item[Risk 4: Former members keep access] People who have graduated or left the university could still log in with an old account and see or file complaints. \textit{Addressed by:} FR-02 Confirmation 7 and 8 (the IUB records are checked at every login) and Assumption 6 in Section 2.5.
+  \item[Risk 4: Former members keep access] People who have left the university (graduated students, and staff or faculty who resigned, retired, or whose contract ended) could still log in with an old account and see or file complaints. \textit{Addressed by:} FR-02 Confirmation 7 and 8 (the IUB records are checked at every login) and Assumption 6 in Section 2.5.
 \end{description}
 
 \chapter{Overall Description}
@@ -228,7 +228,7 @@ The needs below describe what each user class must be able to achieve. Each need
   \item Every user has at least one registered email address or mobile number for receiving the OTP. \textit{If false: they cannot complete registration (FR-01) or reset a password (FR-04).}
   \item The university provides a standard list of buildings, floors, rooms or areas, and complaint categories, which is loaded into the system before use. Users select a location from this list. \textit{If false: duplicate detection (FR-07) and location history (FR-14) become unreliable.}
   \item Maintenance staff check the complaint list during working hours. \textit{If false: complaints stay Open and trigger overdue alerts (FR-15).}
-  \item Members who graduate or leave the university are removed from, or marked inactive in, the IUB records. \textit{If false: former members keep access (FR-02).}
+  \item Members who leave the university (students who graduate, and staff or faculty who resign, retire, or finish a contract) are removed from, or marked inactive in, the IUB records. \textit{If false: former members keep access (FR-02).}
 \end{enumerate}
 
 \newpage
