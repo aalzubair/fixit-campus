@@ -22,6 +22,7 @@ Member --> UC03
 Member --> UC04
 Member --> UC05
 UC01 -- Records
+UC02 -- Records
 UC04 -- Records
 UC01 -- Messenger
 UC04 -- Messenger
