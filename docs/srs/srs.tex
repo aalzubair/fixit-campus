@@ -2,7 +2,7 @@
 \label{ch:intro}
 
 \section{Purpose}
-This SRS specifies the requirements of the Campus Complaint \& Maintenance System, a web-based system that lets students, faculty members, and administrators report campus facility problems and lets maintenance staff handle them, so that every complaint is tracked from report to resolution. It is the basis for design, development, and testing.
+This SRS specifies the requirements of FixIt Campus (the Campus Complaint \& Maintenance System), a web-based system that lets students, faculty members, and administrators report campus facility problems and lets maintenance staff handle them, so that every complaint is tracked from report to resolution. It is the basis for design, development, and testing.
 
 \section{Intended Audience}
 This SRS is written for the following readers:
@@ -25,7 +25,7 @@ This SRS is written for the following readers:
 \end{itemize}
 
 \section{Product Scope}
-The Campus Complaint \& Maintenance System is a web-based maintenance complaint management system for university campuses. It replaces in-person visits and informal reporting with one system where students, faculty members, and administrators report facility problems (broken fans, leaking taps, faulty wiring, damaged furniture), maintenance staff handle them, supervisors monitor delays, and the administration reviews complaint data to plan maintenance spending. It runs in a browser on desktop, tablet, or mobile, with no separate app to install. The system is developed as a course project within the semester schedule.
+FixIt Campus (the Campus Complaint \& Maintenance System) is a web-based maintenance complaint management system for university campuses. It replaces in-person visits and informal reporting with one system where students, faculty members, and administrators report facility problems (broken fans, leaking taps, faulty wiring, damaged furniture), maintenance staff handle them, supervisors monitor delays, and the administration reviews complaint data to plan maintenance spending. It runs in a browser on desktop, tablet, or mobile, with no separate app to install. The system is developed as a course project within the semester schedule.
 
 \textbf{What the system will do}
 
@@ -52,6 +52,7 @@ The Campus Complaint \& Maintenance System is a web-based maintenance complaint 
   \item It does not provide chat between users, automatic assignment of complaints, or a native mobile app.
   \item It does not provide access for visitors or guests without an IUB ID.
   \item It does not let users delete notifications, and notifications do not expire.
+  \item It does not delete or anonymize the complaint history of members who have left the university.
 \end{itemize}
 
 \textbf{Objectives and goals}
@@ -75,6 +76,7 @@ The system supports a safe, well-maintained campus and efficient use of maintena
   \item[Risk 1: Leak of personal data] The system holds IUB ID numbers, contact details, complaint descriptions, and photos. If unauthorized people access them, users' privacy is lost and trust in the system is damaged. \textit{Addressed by:} FR-02, FR-03, FR-07 and FR-09 (access, privacy and log out rules) and the security requirements in Section 3.2.
   \item[Risk 2: A safety hazard is not seen in time] If a dangerous problem stays unnoticed, a person may be injured. \textit{Addressed by:} FR-05, FR-08, FR-11, FR-15, and the safety requirement in Section 3.2.
   \item[Risk 3: Eligible users cannot register] Users without an IUB record or a registered email or mobile number (for example new students or contract staff) cannot use the system, so problems may go unreported. \textit{Addressed by:} FR-01 Confirmation 4 and 7 (clear messages) and Assumptions 1 and 3 in Section 2.5.
+  \item[Risk 4: Former members keep access] People who have graduated or left the university could still log in with an old account and see or file complaints. \textit{Addressed by:} FR-02 Confirmation 7 and 8 (the IUB records are checked at every login) and Assumption 6 in Section 2.5.
 \end{description}
 
 \chapter{Overall Description}
@@ -226,6 +228,7 @@ The needs below describe what each user class must be able to achieve. Each need
   \item Every user has at least one registered email address or mobile number for receiving the OTP. \textit{If false: they cannot complete registration (FR-01) or reset a password (FR-04).}
   \item The university provides a standard list of buildings, floors, rooms or areas, and complaint categories, which is loaded into the system before use. Users select a location from this list. \textit{If false: duplicate detection (FR-07) and location history (FR-14) become unreliable.}
   \item Maintenance staff check the complaint list during working hours. \textit{If false: complaints stay Open and trigger overdue alerts (FR-15).}
+  \item Members who graduate or leave the university are removed from, or marked inactive in, the IUB records. \textit{If false: former members keep access (FR-02).}
 \end{enumerate}
 
 \newpage
@@ -278,6 +281,8 @@ Functional requirements are written as user stories, each with a confirmation pa
   \item \textbf{Given} I am logged in, \textbf{When} I try to open a page that my role is not allowed to use, \textbf{Then} the system denies access and displays ``You are not authorized to view this page.''
   \item \textbf{Given} my account is locked, \textbf{When} I enter my IUB ID number and the correct password, \textbf{Then} the system rejects the login and displays ``Your account is locked. Please try again later.''
   \item \textbf{Given} my account was locked 15 minutes ago, \textbf{When} I enter my correct IUB ID number and password, \textbf{Then} I am logged in and see the home page for my role.
+  \item \textbf{Given} my IUB ID number is no longer in the university records, \textbf{When} I try to log in, \textbf{Then} the system rejects the login and displays ``Your account is no longer active. Please contact the university administration.''
+  \item \textbf{Given} my role in the university records has changed since I registered, \textbf{When} I log in, \textbf{Then} I see the home page for my current role.
 \end{enumerate}}
 \medskip
  
@@ -310,7 +315,7 @@ Functional requirements are written as user stories, each with a confirmation pa
   \item \textbf{Given} I enter an expired OTP, \textbf{When} I submit, \textbf{Then} the system rejects it and lets me request a new OTP.
   \item \textbf{Given} I have a valid OTP, \textbf{When} I request a new OTP, \textbf{Then} the system cancels the earlier OTP immediately and sends the new one, so that only one OTP is valid at a time.
   \item \textbf{Given} my password was changed, \textbf{When} I try to log in with the old password, \textbf{Then} the system rejects the login.
-  \item \textbf{Given} I enter an IUB ID number that is not registered, \textbf{When} I ask for a password reset, \textbf{Then} the system displays ``If this ID is registered, a one-time password has been sent.''
+  \item \textbf{Given} I enter an IUB ID number that is not registered or is no longer in the university records, \textbf{When} I ask for a password reset, \textbf{Then} the system displays ``If this ID is registered, a one-time password has been sent.''
   \item \textbf{Given} I received the OTP, \textbf{When} I enter the correct OTP and a new password shorter than 8 characters, \textbf{Then} the system rejects it and displays ``Password must be at least 8 characters.''
   \item \textbf{Given} I have requested a new OTP 5 times in 15 minutes, \textbf{When} I request another OTP, \textbf{Then} the system rejects the request and displays ``Too many requests. Please try again in 15 minutes.''
   \item \textbf{Given} my account is locked, \textbf{When} I ask for a password reset, \textbf{Then} the system rejects the request and displays ``Your account is locked. Please try again later.''
