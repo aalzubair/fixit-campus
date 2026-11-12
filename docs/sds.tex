@@ -1,0 +1,403 @@
+% Software Design Specification (SDS): Campus Complaint & Maintenance System
+% Standalone document. Upload this file to a new Overleaf project and set it as the main file.
+% It uses only standard packages (geometry, array, longtable, lscape, tikz, adjustbox).
+\documentclass[11pt,a4paper]{report}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{lscape}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta}
+\usepackage{pdflscape}
+\usepackage[T1]{fontenc}
+\usepackage{graphicx}
+\usepackage{adjustbox}
+\usepackage{float}
+\newcommand{\figheight}{0.8}
+\usepackage{eso-pic}
+\newcommand{\lspagenum}{\thispagestyle{empty}\AddToShipoutPictureFG*{\put(\LenToUnit{\paperwidth-1.4cm},\LenToUnit{0.5\paperheight}){\makebox(0,0){\rotatebox{90}{\thepage}}}}}
+\renewcommand{\resizebox}[3]{\begin{adjustbox}{max width=0.95\linewidth,max height=\figheight\textheight,center}#3\end{adjustbox}}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{3cm}
+{\LARGE\bfseries Software Design Specification\par}
+\vspace{0.5cm}
+{\Large for\par}
+\vspace{0.5cm}
+{\LARGE\bfseries FixIt Campus\par}
+\vspace{0.3cm}
+{\large (Campus Complaint \& Maintenance System)\par}
+\vspace{2cm}
+{\large Prepared by:\par}
+\vspace{0.3cm}
+Abdullah Al Zubair (2611972)\par
+Jannatun Naim (2330097)\par
+Asiful Islam (2420197)\par
+Puja Sur (2222124)\par
+\vspace{1.5cm}
+Independent University, Bangladesh (IUB)\par
+Software Engineering\par
+\vspace{1cm}
+Version 1.2, November 2026
+\end{titlepage}
+
+\tableofcontents
+
+\chapter{Use Case Narratives}
+Each use case has the same number as its functional requirement in the SRS (UC-12 is FR-12). Every step and alternate flow comes from the Confirmations of that functional requirement. The system-wide non-functional requirements (NFR-01, NFR-13, NFR-14, and NFR-15) apply to every use case, so each narrative lists only the specific ones.
+
+\section{UC-01 Register Account (FR-01)}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.0cm}|>{\raggedright\arraybackslash}p{12.4cm}|}
+\hline \textbf{Field} & \textbf{Description} \\ \hline \endhead
+\textbf{Actors} & Primary: IUB community member (student, faculty member, maintenance staff, supervisor, administrator).\par\smallskip Secondary: IUB Records, Message Delivery Service. \\ \hline
+\textbf{Precondition} & The person has an IUB ID number. \\ \hline
+\textbf{Trigger} & The person chooses Register. \\ \hline
+\textbf{Main success scenario} & 1. The person enters the IUB ID number and a password and submits.\par\smallskip 2. The system looks up the IUB ID number in the IUB Records.\par\smallskip 3. The system sends a one-time password (OTP) to the registered university email or, if no email is on record, to the registered mobile number.\par\smallskip 4. The person enters the correct OTP within 5 minutes.\par\smallskip 5. The system activates the account with the role stored in the IUB Records.\par\smallskip 6. The system shows that the account is active and the person can log in. \\ \hline
+\textbf{Alternate flows} & 1a. The password is shorter than 8 characters: the system rejects it and shows ``Password must be at least 8 characters.'' The person returns to step 1.\par\smallskip 2a. The IUB ID number is not in the IUB Records: the system rejects the request and shows ``IUB ID number not found. Please contact the university administration.'' The use case ends.\par\smallskip 2b. The IUB ID number is already registered and activated: the system rejects the request and shows ``This ID is already registered.'' The use case ends.\par\smallskip 2c. The IUB ID number has no registered email or mobile number: the system rejects the request and shows ``No contact details are registered for this ID. Please contact the university administration.'' The use case ends.\par\smallskip 2d. The account is waiting for activation because an earlier registration was not completed: the system replaces the earlier password with the new one and sends a new OTP. The use case continues at step 4.\par\smallskip 3a. The person has already requested a new OTP 5 times in 15 minutes: the system rejects the request and shows ``Too many requests. Please try again in 15 minutes.'' The use case ends.\par\smallskip 3b. The person requests a new OTP while an earlier OTP is still valid: the system cancels the earlier OTP and sends the new one.\par\smallskip 4a. The OTP is wrong: the system rejects it and the person can enter the OTP again. After the 3rd wrong attempt, the system marks the OTP invalid and the person must request a new OTP. The person returns to step 3.\par\smallskip 4b. The OTP is expired: the system rejects it and lets the person request a new OTP. The person returns to step 3. \\ \hline
+\textbf{Postcondition} & The account is active with the role stored in the IUB Records, and the person can log in. \\ \hline
+\textbf{Non-functional} & NFR-06 (HTTPS, TLS 1.2 or higher), NFR-08 (passwords stored only as salted hashes). \\ \hline
+\end{longtable}
+\section{UC-02 Log In (FR-02)}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.0cm}|>{\raggedright\arraybackslash}p{12.4cm}|}
+\hline \textbf{Field} & \textbf{Description} \\ \hline \endhead
+\textbf{Actors} & Primary: any registered user.\par\smallskip Secondary: IUB Records. \\ \hline
+\textbf{Precondition} & The person has an active account. \\ \hline
+\textbf{Trigger} & The person opens the login page and chooses Log in. \\ \hline
+\textbf{Main success scenario} & 1. The person enters the IUB ID number and password and submits.\par\smallskip 2. The system checks the IUB ID number and password, and confirms in the IUB records that the ID number still exists.\par\smallskip 3. The system logs the person in and shows the home page for their current role. \\ \hline
+\textbf{Alternate flows} & 2a. The password is wrong: the system rejects the login and shows ``Invalid ID or password'', without saying which one is wrong. The person returns to step 1.\par\smallskip 2b. The password was wrong 5 times in a row: the system locks the account for 15 minutes. The use case ends. When 15 minutes have passed, the person can log in again with the correct password.\par\smallskip 2c. The account is locked and the person enters the correct password: the system rejects the login and shows ``Your account is locked. Please try again later.'' The use case ends.\par\smallskip 2d. The IUB ID number is no longer in the IUB records: the system rejects the login and shows ``Your account is no longer active. Please contact the university administration.'' The use case ends.\par\smallskip 3a. The person tries to open a page that their role is not allowed to use: the system denies access and shows ``You are not authorized to view this page.''\par\smallskip 3b. The role in the IUB records has changed since registration: the system updates the role and shows the home page for the current role. \\ \hline
+\textbf{Postcondition} & The person is logged in and sees the home page for their role. \\ \hline
+\textbf{Non-functional} & NFR-05 (unauthorized users cannot access complaint details), NFR-06 (HTTPS), NFR-07 (inactive sessions end after 15 minutes), NFR-08 (salted password hashes). \\ \hline
+\end{longtable}
+\section{UC-03 Log Out (FR-03)}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.0cm}|>{\raggedright\arraybackslash}p{12.4cm}|}
+\hline \textbf{Field} & \textbf{Description} \\ \hline \endhead
+\textbf{Actors} & Primary: any registered user.\par\smallskip Secondary: none. \\ \hline
+\textbf{Precondition} & The person is logged in. \\ \hline
+\textbf{Trigger} & The person chooses Log out. \\ \hline
+\textbf{Main success scenario} & 1. The person chooses Log out.\par\smallskip 2. The system ends the session.\par\smallskip 3. The system shows the login page. \\ \hline
+\textbf{Alternate flows} & 1a. The person has been inactive for 15 minutes: the system has already ended the session, shows the login page, and displays ``Your session has expired. Please log in again.'' The use case ends.\par\smallskip 3a. After logging out, the person uses the browser's back button or opens the address of a protected page: the system does not show the page and asks the person to log in first. \\ \hline
+\textbf{Postcondition} & The session has ended and no protected page can be opened without logging in again. \\ \hline
+\textbf{Non-functional} & NFR-07 (inactive sessions end after 15 minutes). \\ \hline
+\end{longtable}
+\section{UC-04 Reset Password (FR-04)}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.0cm}|>{\raggedright\arraybackslash}p{12.4cm}|}
+\hline \textbf{Field} & \textbf{Description} \\ \hline \endhead
+\textbf{Actors} & Primary: any registered user.\par\smallskip Secondary: IUB Records, Message Delivery Service. \\ \hline
+\textbf{Precondition} & The person has a registered account and has forgotten the password. \\ \hline
+\textbf{Trigger} & The person chooses Forgot password on the login page. \\ \hline
+\textbf{Main success scenario} & 1. The person enters the IUB ID number.\par\smallskip 2. The system sends a one-time password (OTP) to the registered university email or, if no email is on record, to the registered mobile number.\par\smallskip 3. The person enters the correct OTP within 5 minutes and a new password of at least 8 characters.\par\smallskip 4. The system changes the password.\par\smallskip 5. The person logs in with the new password (UC-02). \\ \hline
+\textbf{Alternate flows} & 2a. The IUB ID number is not registered or is no longer in the IUB records: the system shows ``If this ID is registered, a one-time password has been sent.'' and sends nothing. The use case ends.\par\smallskip 2b. The person has already requested a new OTP 5 times in 15 minutes: the system rejects the request and shows ``Too many requests. Please try again in 15 minutes.'' The use case ends.\par\smallskip 2c. The account is locked: the system rejects the request and shows ``Your account is locked. Please try again later.'' The use case ends.\par\smallskip 2d. The person requests a new OTP while an earlier OTP is still valid: the system cancels the earlier OTP and sends the new one.\par\smallskip 3a. The OTP is wrong: the system rejects it and the person can enter the OTP again. After the 3rd wrong attempt, the system marks the OTP invalid and the person must request a new OTP. The person returns to step 2.\par\smallskip 3b. The OTP is expired: the system rejects it and lets the person request a new OTP. The person returns to step 2.\par\smallskip 3c. The new password is shorter than 8 characters: the system rejects it and shows ``Password must be at least 8 characters.'' The person enters a new password again.\par\smallskip 5a. The person tries to log in with the old password: the system rejects the login. \\ \hline
+\textbf{Postcondition} & The password is changed and the old password no longer works. \\ \hline
+\textbf{Non-functional} & NFR-06 (HTTPS, TLS 1.2 or higher), NFR-08 (passwords stored only as salted hashes). \\ \hline
+\end{longtable}
+\section{UC-05 View Notifications (FR-05)}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.0cm}|>{\raggedright\arraybackslash}p{12.4cm}|}
+\hline \textbf{Field} & \textbf{Description} \\ \hline \endhead
+\textbf{Actors} & Primary: any registered user.\par\smallskip Secondary: none. \\ \hline
+\textbf{Precondition} & The person is logged in. \\ \hline
+\textbf{Trigger} & The person chooses the Notifications link. \\ \hline
+\textbf{Main success scenario} & 1. The system shows the number of unread notifications next to the Notifications link.\par\smallskip 2. The person opens Notifications.\par\smallskip 3. The system lists the notifications, newest first, with the unread ones marked.\par\smallskip 4. The person opens an unread notification.\par\smallskip 5. The system marks it as read and takes the person to the related complaint. \\ \hline
+\textbf{Alternate flows} & 3a. The person has no notifications: the system shows ``You have no notifications.'' The use case ends. \\ \hline
+\textbf{Postcondition} & The opened notification is marked as read. \\ \hline
+\textbf{Non-functional} & NFR-04 (a Safety Hazard notification reaches maintenance staff and supervisors within 5 minutes in at least 99\% of cases). \\ \hline
+\end{longtable}
+\section{UC-06 Submit Complaint (FR-06)}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.0cm}|>{\raggedright\arraybackslash}p{12.4cm}|}
+\hline \textbf{Field} & \textbf{Description} \\ \hline \endhead
+\textbf{Actors} & Primary: Complainant (student, faculty member, administrator).\par\smallskip Secondary: none. \\ \hline
+\textbf{Precondition} & The person has an active account. \\ \hline
+\textbf{Trigger} & The person chooses Submit complaint. \\ \hline
+\textbf{Main success scenario} & 1. The person opens the complaint form.\par\smallskip 2. The person selects a category, selects a location from the list (building, floor, room or area), and adds a description.\par\smallskip 3. The system checks for similar complaints (include UC-07 Detect Duplicate Complaints).\par\smallskip 4. The person may attach a photo and may tick Safety Hazard (extend UC-08 Flag Safety Hazard).\par\smallskip 5. The person submits the complaint.\par\smallskip 6. The system saves the complaint with status Open, together with the photo if one was attached.\par\smallskip 7. The system shows a confirmation message with a unique complaint ID. \\ \hline
+\textbf{Alternate flows} & 1a. The person is not logged in: the system asks the person to log in first. The use case ends.\par\smallskip 3a. The person follows a similar complaint (UC-07): no new complaint is created. The use case ends.\par\smallskip 4a. The attached file is not a JPG or PNG image or is larger than 5 MB: the system rejects the file and shows ``Photo must be a JPG or PNG file of up to 5 MB.'' The person returns to step 4.\par\smallskip 5a. The category or the location is missing: the system does not save the complaint and highlights the missing fields. The person returns to step 2. \\ \hline
+\textbf{Postcondition} & The complaint is saved with status Open and a unique ID. A photo, if attached, is saved with it and is visible to maintenance staff and supervisors. \\ \hline
+\textbf{Non-functional} & NFR-05 (complaint details and photos are protected), NFR-10 (no incomplete record if submission fails), NFR-11 (no duplicate record if the person retries), NFR-16 (a new student or faculty member can submit within 2 minutes), NFR-17 (a photo is a JPG or PNG file of up to 5 MB). \\ \hline
+\end{longtable}
+\section{UC-07 Detect Duplicate Complaints (FR-07)}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.0cm}|>{\raggedright\arraybackslash}p{12.4cm}|}
+\hline \textbf{Field} & \textbf{Description} \\ \hline \endhead
+\textbf{Actors} & Primary: Complainant.\par\smallskip Secondary: none. \\ \hline
+\textbf{Precondition} & The person is submitting a complaint (UC-06) and has selected a category and a location. \\ \hline
+\textbf{Trigger} & The person selects a category and a location. \\ \hline
+\textbf{Main success scenario} & 1. The system searches for Open or In Progress complaints with the same category and the same location (location rule in FR-14), whenever both are selected or either is changed.\par\smallskip 2. The system shows each matching complaint with only its category, location, and status, without the reporter's name or description.\par\smallskip 3. The person chooses to follow a matching complaint.\par\smallskip 4. The system records the follow and does not create a new complaint.\par\smallskip 5. When the complaint is marked Resolved or Rejected, the system sends an on-screen notification to the person. \\ \hline
+\textbf{Alternate flows} & 1a. No Open or In Progress complaint matches: the system accepts the complaint as normal and the person continues UC-06.\par\smallskip 2a. The person does not follow any matching complaint and continues submitting: the system accepts it as a new complaint and the person continues UC-06 at step 4.\par\smallskip 5a. Before that happens, the person chooses to stop following the complaint: the system no longer sends notifications about it. The use case ends. \\ \hline
+\textbf{Postcondition} & The person follows the complaint and no new complaint was created. \\ \hline
+\textbf{Non-functional} & NFR-03 (the notification reaches the person within 1 minute in at least 95\% of cases). \\ \hline
+\end{longtable}
+\section{UC-08 Flag Safety Hazard (FR-08)}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.0cm}|>{\raggedright\arraybackslash}p{12.4cm}|}
+\hline \textbf{Field} & \textbf{Description} \\ \hline \endhead
+\textbf{Actors} & Primary: Complainant.\par\smallskip Secondary: Message Delivery Service. \\ \hline
+\textbf{Precondition} & The person is submitting a complaint (UC-06). This use case extends UC-06 at step 4. \\ \hline
+\textbf{Trigger} & The person ticks Safety Hazard on the complaint form. \\ \hline
+\textbf{Main success scenario} & 1. The person ticks Safety Hazard.\par\smallskip 2. The person submits the complaint (UC-06, step 5).\par\smallskip 3. The system saves the complaint as Open with a Safety Hazard flag.\par\smallskip 4. The system sends an on-screen notification to maintenance staff and supervisors.\par\smallskip 5. The system sends an email or SMS message to each maintenance supervisor at their registered email address or mobile number. \\ \hline
+\textbf{Alternate flows} & 4a. The notification (step 4) or the email or SMS message (step 5) cannot be delivered: the complaint is still saved as Open with the Safety Hazard flag and appears at the top of the staff and supervisor lists. The use case ends. \\ \hline
+\textbf{Postcondition} & The complaint is Open with a Safety Hazard flag. Maintenance staff and supervisors have been notified on screen, and each supervisor has been sent an email or SMS message. \\ \hline
+\textbf{Non-functional} & NFR-04 (staff and supervisors are notified on screen, and supervisors by email or SMS, within 5 minutes in at least 99\% of cases), NFR-09 (the Safety Hazard indicator also has a text label). \\ \hline
+\end{longtable}
+\section{UC-09 Track Complaint Status (FR-09)}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.0cm}|>{\raggedright\arraybackslash}p{12.4cm}|}
+\hline \textbf{Field} & \textbf{Description} \\ \hline \endhead
+\textbf{Actors} & Primary: Complainant.\par\smallskip Secondary: none. \\ \hline
+\textbf{Precondition} & The person is logged in. \\ \hline
+\textbf{Trigger} & The person opens My Complaints. \\ \hline
+\textbf{Main success scenario} & 1. The person opens My Complaints.\par\smallskip 2. The system lists the person's own complaints with the status (Open, In Progress, Resolved, or Rejected), the date and time of the last status change, and the reason for a Rejected one.\par\smallskip 3. The system lists the complaints the person follows under Following, with only the category, location, status, and the date and time of the last status change.\par\smallskip 4. The person opens one of their own complaints and the system shows its category, location, description, photo (if one was attached), status, and the reason if it is Rejected.\par\smallskip 5. The person may stop following a complaint (UC-07). \\ \hline
+\textbf{Alternate flows} & 1a. The person has not submitted or followed any complaint: the system shows ``You have no complaints to show.'' The use case ends.\par\smallskip 3a. The person tries to open the details of another user's complaint: the system denies access and shows ``You are not allowed to view this complaint.'' \\ \hline
+\textbf{Postcondition} & The person has seen the current status of their own and followed complaints, and the details of any of their own complaints that they opened. \\ \hline
+\textbf{Non-functional} & NFR-05 (unauthorized users cannot access complaint details). \\ \hline
+\end{longtable}
+\section{UC-10 Reopen Complaint (FR-10)}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.0cm}|>{\raggedright\arraybackslash}p{12.4cm}|}
+\hline \textbf{Field} & \textbf{Description} \\ \hline \endhead
+\textbf{Actors} & Primary: Complainant.\par\smallskip Secondary: none. \\ \hline
+\textbf{Precondition} & The person has a complaint with status Resolved. \\ \hline
+\textbf{Trigger} & The person chooses Reopen on that complaint. \\ \hline
+\textbf{Main success scenario} & 1. The person opens the Resolved complaint (UC-09).\par\smallskip 2. The person chooses Reopen and enters a short reason.\par\smallskip 3. The system checks that the complaint is Resolved and was marked Resolved no more than 7 days ago.\par\smallskip 4. The system changes the status to Open and clears the previous assignment.\par\smallskip 5. The system makes the reason visible to maintenance staff and supervisors. \\ \hline
+\textbf{Alternate flows} & 2a. No reason is entered: the complaint is not reopened and the system shows ``Please enter a reason.'' The person returns to step 2.\par\smallskip 3a. The complaint is Open, In Progress, or Rejected: the system rejects the action and shows ``Only Resolved complaints can be reopened.'' The use case ends.\par\smallskip 3b. The complaint was marked Resolved more than 7 days ago: the system rejects the action and asks the person to submit a new complaint. The use case ends. \\ \hline
+\textbf{Postcondition} & The complaint is Open and unassigned, and it shows the reopen reason. \\ \hline
+\textbf{Non-functional} & None specific. \\ \hline
+\end{longtable}
+\section{UC-11 Filter Complaint List (FR-11)}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.0cm}|>{\raggedright\arraybackslash}p{12.4cm}|}
+\hline \textbf{Field} & \textbf{Description} \\ \hline \endhead
+\textbf{Actors} & Primary: Maintenance Staff, Maintenance Supervisor.\par\smallskip Secondary: none. \\ \hline
+\textbf{Precondition} & The person is logged in as maintenance staff or as a supervisor. \\ \hline
+\textbf{Trigger} & The person opens the complaint list. \\ \hline
+\textbf{Main success scenario} & 1. The person opens the complaint list.\par\smallskip 2. The system shows each complaint's ID, category, location, status, and submission date, with Safety Hazard complaints at the top.\par\smallskip 3. The person selects one or more filters (status, category, location, or Safety Hazard).\par\smallskip 4. The system shows only the complaints that match all selected filters. \\ \hline
+\textbf{Alternate flows} & 4a. No complaint matches the filters: the system shows ``No complaints match your filters.'' The use case ends. \\ \hline
+\textbf{Postcondition} & The person sees the complaints that match the chosen filters. \\ \hline
+\textbf{Non-functional} & NFR-09 (a Safety Hazard indicator also has a text label). \\ \hline
+\end{longtable}
+\section{UC-12 Accept Complaint (FR-12)}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.0cm}|>{\raggedright\arraybackslash}p{12.4cm}|}
+\hline \textbf{Field} & \textbf{Description} \\ \hline \endhead
+\textbf{Actors} & Primary: Maintenance Staff.\par\smallskip Secondary: none. \\ \hline
+\textbf{Precondition} & The person is logged in as maintenance staff. A complaint exists. \\ \hline
+\textbf{Trigger} & The person chooses Accept on a complaint in the complaint list. \\ \hline
+\textbf{Main success scenario} & 1. The person chooses Accept on an Open complaint.\par\smallskip 2. The system checks that the complaint is still Open and unassigned.\par\smallskip 3. The system changes the status to In Progress.\par\smallskip 4. The system assigns the complaint to the person.\par\smallskip 5. If the complaint has an Overdue mark, the system removes it (FR-15 Confirmation 3).\par\smallskip 6. The system shows the updated complaint. \\ \hline
+\textbf{Alternate flows} & 2a. The complaint is In Progress and assigned to another staff member: the system rejects the action and shows ``Complaint already assigned''. The assignment stays unchanged. The use case ends.\par\smallskip 2b. The complaint is Resolved or Rejected: the system rejects the action and shows ``Only Open complaints can be accepted.'' The use case ends. \\ \hline
+\textbf{Postcondition} & The complaint is In Progress and assigned to the person, with no Overdue mark. The complainant can see that work has started. \\ \hline
+\textbf{Non-functional} & None specific. \\ \hline
+\end{longtable}
+\section{UC-13 Resolve Complaint (FR-13)}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.0cm}|>{\raggedright\arraybackslash}p{12.4cm}|}
+\hline \textbf{Field} & \textbf{Description} \\ \hline \endhead
+\textbf{Actors} & Primary: Maintenance Staff (the assigned staff member), Maintenance Supervisor.\par\smallskip Secondary: none. \\ \hline
+\textbf{Precondition} & The person is logged in as maintenance staff or as a supervisor. A complaint exists. \\ \hline
+\textbf{Trigger} & The person chooses Mark as Resolved on a complaint. \\ \hline
+\textbf{Main success scenario} & 1. The person opens a complaint.\par\smallskip 2. The person chooses Mark as Resolved.\par\smallskip 3. The system checks that the complaint is In Progress.\par\smallskip 4. The system checks that the person is the assigned staff member or a maintenance supervisor.\par\smallskip 5. The system changes the status to Resolved and records the date and time of resolution.\par\smallskip 6. The system sends an on-screen notification to the person who submitted the complaint and to everyone following it.\par\smallskip 7. If the person is a supervisor, the system also sends an on-screen notification to the assigned staff member. \\ \hline
+\textbf{Alternate flows} & 3a. The complaint is Open: the system rejects the action and asks the person to accept the complaint first (UC-12). The use case ends.\par\smallskip 3b. The complaint is Resolved or Rejected: the system rejects the action and shows ``Only In Progress complaints can be marked as Resolved.'' The use case ends.\par\smallskip 4a. The complaint is assigned to another staff member and the person is not a supervisor: the system rejects the action and shows ``Only the assigned staff member or a supervisor can resolve this complaint.'' The use case ends. \\ \hline
+\textbf{Postcondition} & The complaint is Resolved with the date and time recorded. The submitter and the followers have been notified, and so has the assigned staff member if a supervisor resolved it. \\ \hline
+\textbf{Non-functional} & NFR-03 (the notification reaches the submitter and the followers within 1 minute in at least 95\% of cases). \\ \hline
+\end{longtable}
+\section{UC-14 View Location History (FR-14)}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.0cm}|>{\raggedright\arraybackslash}p{12.4cm}|}
+\hline \textbf{Field} & \textbf{Description} \\ \hline \endhead
+\textbf{Actors} & Primary: Maintenance Staff, Maintenance Supervisor.\par\smallskip Secondary: none. \\ \hline
+\textbf{Precondition} & The person is logged in as maintenance staff or as a supervisor. A complaint exists. \\ \hline
+\textbf{Trigger} & The person opens a complaint. \\ \hline
+\textbf{Main success scenario} & 1. The person opens a complaint.\par\smallskip 2. The system finds the previous complaints with the same building, floor, and room or area (shared areas such as hallways and restrooms have their own location entries).\par\smallskip 3. The system lists them, including Rejected ones, with category, submission date, and current status. \\ \hline
+\textbf{Alternate flows} & 2a. There are no previous complaints for the location: the system shows ``No complaint history available.'' The use case ends. \\ \hline
+\textbf{Postcondition} & The person has seen the history of the location. \\ \hline
+\textbf{Non-functional} & None specific. \\ \hline
+\end{longtable}
+\section{UC-15 Escalate Overdue Complaint (FR-15)}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.0cm}|>{\raggedright\arraybackslash}p{12.4cm}|}
+\hline \textbf{Field} & \textbf{Description} \\ \hline \endhead
+\textbf{Actors} & Primary: Maintenance Supervisor (every supervisor receives the notification).\par\smallskip Secondary: none. The system starts this use case. \\ \hline
+\textbf{Precondition} & A complaint has status Open. \\ \hline
+\textbf{Trigger} & The 48th hour passes while the complaint is still Open. \\ \hline
+\textbf{Main success scenario} & 1. The system finds that the complaint is still Open at the 48th hour (counted from when it became Open, by submission or by reopening).\par\smallskip 2. The system marks the complaint Overdue.\par\smallskip 3. The system sends one notification to every maintenance supervisor. \\ \hline
+\textbf{Alternate flows} & 1a. The complaint moved to In Progress before 48 hours: no overdue notification is sent. The use case ends.\par\smallskip 1b. The complaint moved to Rejected before 48 hours: no overdue notification is sent and no Overdue mark is shown. The use case ends.\par\smallskip 3a. Later, a maintenance staff member accepts the complaint (UC-12), a supervisor assigns it (UC-17), or it is rejected (UC-20): the system removes the Overdue mark. \\ \hline
+\textbf{Postcondition} & The complaint shows an Overdue mark and the supervisor has been notified. \\ \hline
+\textbf{Non-functional} & None specific. \\ \hline
+\end{longtable}
+\section{UC-16 Monitor Complaints (FR-16)}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.0cm}|>{\raggedright\arraybackslash}p{12.4cm}|}
+\hline \textbf{Field} & \textbf{Description} \\ \hline \endhead
+\textbf{Actors} & Primary: Maintenance Supervisor.\par\smallskip Secondary: none. \\ \hline
+\textbf{Precondition} & The person is logged in as a maintenance supervisor. \\ \hline
+\textbf{Trigger} & The person opens the complaint overview. \\ \hline
+\textbf{Main success scenario} & 1. The person opens the complaint overview.\par\smallskip 2. The system shows each complaint's ID, category, location, status, and assigned staff member, with an Overdue mark where it applies and Safety Hazard complaints at the top.\par\smallskip 3. The person filters by status (including Rejected), assigned staff member, or Overdue.\par\smallskip 4. The system shows only the matching complaints.\par\smallskip 5. For Rejected complaints, the system also shows the reason, the name of the staff member or supervisor who rejected it, and the date and time. \\ \hline
+\textbf{Alternate flows} & 4a. No complaint matches the filters: the system shows ``No complaints match your filters.'' The use case ends. \\ \hline
+\textbf{Postcondition} & The person sees the current state of the complaints that match the filters. \\ \hline
+\textbf{Non-functional} & None specific. \\ \hline
+\end{longtable}
+\section{UC-17 Assign Complaint (FR-17)}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.0cm}|>{\raggedright\arraybackslash}p{12.4cm}|}
+\hline \textbf{Field} & \textbf{Description} \\ \hline \endhead
+\textbf{Actors} & Primary: Maintenance Supervisor.\par\smallskip Secondary: none. \\ \hline
+\textbf{Precondition} & The person is logged in. A complaint exists. \\ \hline
+\textbf{Trigger} & The person chooses Assign on a complaint. \\ \hline
+\textbf{Main success scenario} & 1. The person opens an Open or In Progress complaint (UC-16).\par\smallskip 2. The person chooses Assign and selects any maintenance staff member (the system does not track availability).\par\smallskip 3. The system checks that the complaint is Open or In Progress.\par\smallskip 4. The system assigns the complaint to the selected staff member.\par\smallskip 5. If the complaint was Open, the system changes the status to In Progress and removes any Overdue mark (FR-15 Confirmation 3). If it was In Progress, the status stays In Progress.\par\smallskip 6. The system sends an on-screen notification to the new staff member, and to the previous staff member if there was one. \\ \hline
+\textbf{Alternate flows} & 2a. The person is maintenance staff, a student, a faculty member, or an administrator: the system denies access and shows ``Only supervisors can assign complaints.'' The use case ends.\par\smallskip 3a. The complaint is Resolved or Rejected: the system rejects the action and shows ``Only Open or In Progress complaints can be assigned.'' The use case ends. \\ \hline
+\textbf{Postcondition} & The complaint is In Progress and assigned to the selected staff member, with no Overdue mark. The staff members involved have been notified. \\ \hline
+\textbf{Non-functional} & None specific. \\ \hline
+\end{longtable}
+\section{UC-18 Generate Resolution-Time Report (FR-18)}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.0cm}|>{\raggedright\arraybackslash}p{12.4cm}|}
+\hline \textbf{Field} & \textbf{Description} \\ \hline \endhead
+\textbf{Actors} & Primary: University Administration.\par\smallskip Secondary: none. \\ \hline
+\textbf{Precondition} & The person is logged in as an administrator. \\ \hline
+\textbf{Trigger} & The person chooses the resolution-time report. \\ \hline
+\textbf{Main success scenario} & 1. The person selects a date range.\par\smallskip 2. The person generates the report.\par\smallskip 3. The system includes only the complaints submitted in the date range.\par\smallskip 4. The system leaves out Rejected complaints.\par\smallskip 5. The system shows, for each category, the number of complaints (Open, In Progress, and Resolved) in a column ``Complaints'' and the average resolution time in a column ``Average resolution time (Resolved only)''. Resolution time is the time from first submission to the last time the complaint was marked Resolved. \\ \hline
+\textbf{Alternate flows} & 3a. No complaints exist in the date range: the system shows ``No records found.'' The use case ends. \\ \hline
+\textbf{Postcondition} & The person has seen the report for the selected date range. \\ \hline
+\textbf{Non-functional} & NFR-02 (a report for up to 10,000 complaint records within 5 seconds), NFR-12 (the totals match the complaint records that meet the filters). \\ \hline
+\end{longtable}
+\section{UC-19 Generate Frequency Report (FR-19)}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.0cm}|>{\raggedright\arraybackslash}p{12.4cm}|}
+\hline \textbf{Field} & \textbf{Description} \\ \hline \endhead
+\textbf{Actors} & Primary: University Administration.\par\smallskip Secondary: none. \\ \hline
+\textbf{Precondition} & The person is logged in as an administrator. \\ \hline
+\textbf{Trigger} & The person chooses the complaint frequency report. \\ \hline
+\textbf{Main success scenario} & 1. The person selects a date range.\par\smallskip 2. The person generates the report.\par\smallskip 3. The system includes only the complaints submitted in the date range.\par\smallskip 4. The system leaves out Rejected complaints.\par\smallskip 5. The system shows the complaint counts (Open, In Progress, and Resolved) grouped by building and category. \\ \hline
+\textbf{Alternate flows} & 3a. No complaints exist in the date range: the system shows ``No records found.'' The use case ends. \\ \hline
+\textbf{Postcondition} & The person has seen the report for the selected date range. \\ \hline
+\textbf{Non-functional} & NFR-02 (a report for up to 10,000 complaint records within 5 seconds), NFR-12 (the totals match the complaint records that meet the filters). \\ \hline
+\end{longtable}
+\section{UC-20 Reject Complaint (FR-20)}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.0cm}|>{\raggedright\arraybackslash}p{12.4cm}|}
+\hline \textbf{Field} & \textbf{Description} \\ \hline \endhead
+\textbf{Actors} & Primary: Maintenance Staff, Maintenance Supervisor.\par\smallskip Secondary: none. \\ \hline
+\textbf{Precondition} & The person is logged in. A complaint exists. \\ \hline
+\textbf{Trigger} & The person chooses Reject on a complaint. \\ \hline
+\textbf{Main success scenario} & 1. The person opens an Open or In Progress complaint.\par\smallskip 2. The person chooses Reject.\par\smallskip 3. The person enters a reason.\par\smallskip 4. The system checks that the complaint is Open or In Progress.\par\smallskip 5. If the complaint is In Progress, the system checks that the person is the assigned staff member or a supervisor.\par\smallskip 6. The system changes the status to Rejected and saves the reason, the person's name, and the date and time.\par\smallskip 7. If the complaint has an Overdue mark, the system removes it (FR-15 Confirmation 3).\par\smallskip 8. The system sends an on-screen notification showing the reason to the person who submitted the complaint and to everyone following it. \\ \hline
+\textbf{Alternate flows} & 2a. The person is a student, a faculty member, or an administrator: the system denies access and shows ``Only maintenance staff and supervisors can reject complaints.'' The use case ends.\par\smallskip 3a. No reason is entered: the complaint is not rejected and the system shows ``Please enter a reason.'' The person returns to step 3.\par\smallskip 4a. The complaint is Resolved or Rejected: the system does not change it and shows ``Only Open or In Progress complaints can be rejected.'' The use case ends.\par\smallskip 5a. The complaint is assigned to another staff member and the person is not a supervisor: the system does not change it and shows ``Only the assigned staff member or a supervisor can reject this complaint.'' The use case ends. \\ \hline
+\textbf{Postcondition} & The complaint is Rejected with the reason, the name, and the date and time saved, and has no Overdue mark. The submitter and the followers have been notified. \\ \hline
+\textbf{Non-functional} & NFR-03 (the notification reaches the submitter and the followers within 1 minute in at least 95\% of cases). \\ \hline
+\end{longtable}
+\section{UC-21 Browse Existing Complaints (FR-21)}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{3.0cm}|>{\raggedright\arraybackslash}p{12.4cm}|}
+\hline \textbf{Field} & \textbf{Description} \\ \hline \endhead
+\textbf{Actors} & Primary: Complainant (student, faculty member, administrator).\par\smallskip Secondary: none. \\ \hline
+\textbf{Precondition} & The person is logged in. \\ \hline
+\textbf{Trigger} & The person opens Existing Complaints. \\ \hline
+\textbf{Main success scenario} & 1. The person opens Existing Complaints.\par\smallskip 2. The system lists each Open or In Progress complaint with its category, location, status, and date submitted, without the reporter's name, the description, or any photo.\par\smallskip 3. The person filters by building, category, or status.\par\smallskip 4. The system shows only the matching complaints.\par\smallskip 5. The person chooses to follow a complaint that matches their problem.\par\smallskip 6. The system records the follow and creates no new complaint, as described in FR-07 Confirmation 2.\par\smallskip 7. When the complaint is marked Resolved or Rejected, the system sends an on-screen notification to the person (FR-07 Confirmation 2). \\ \hline
+\textbf{Alternate flows} & 4a. No complaint matches the filters: the system shows ``No complaints match your filters.'' The use case ends. \\ \hline
+\textbf{Postcondition} & The person has browsed the existing complaints and may follow one. No new complaint was created. \\ \hline
+\textbf{Non-functional} & NFR-03 (the notification reaches the person within 1 minute in at least 95\% of cases). \\ \hline
+\end{longtable}
+
+\chapter{Use Case Diagram}
+\paragraph{Note on the three diagrams}
+The use case diagram is split into three parts by actor group, because all 21 use cases and 9 actors on one A4 page would make the text too small to read (confirmed by the course instructor).
+
+\vspace{0.5em}\noindent University Administration appears in parts 2 and 3 (as a complainant and as the report reader). Every user is an IUB Community Member; that generalization is noted in part 1 and visible in the actor hierarchy.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\linewidth,height=0.8\textheight,keepaspectratio]{UcAccountNotifications.png}
+\caption{Use case diagram, part 1 of 3: account and notifications}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\linewidth,height=0.8\textheight,keepaspectratio]{UcComplainant.png}
+\caption{Use case diagram, part 2 of 3: complainants}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\linewidth,height=0.8\textheight,keepaspectratio]{UcMaintenanceAdministration.png}
+\caption{Use case diagram, part 3 of 3: maintenance and administration}
+\end{figure}
+
+
+
+
+\chapter{State Diagrams}
+\section{Complaint state diagram}
+A complaint is Open when it is submitted and ends as Resolved or Rejected. Overdue is a mark on an Open complaint, not a state. It is added after 48 hours (FR-15) and removed when the complaint is accepted, assigned, or rejected.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\linewidth,height=0.8\textheight,keepaspectratio]{ComplaintStateDiagram.png}
+\caption{Complaint state diagram}
+\end{figure}
+
+\begin{longtable}{|>{\raggedright\arraybackslash}p{2.6cm}|>{\raggedright\arraybackslash}p{2.6cm}|>{\raggedright\arraybackslash}p{8.2cm}|>{\raggedright\arraybackslash}p{1.9cm}|}
+\hline \textbf{From} & \textbf{To} & \textbf{Trigger and guard} & \textbf{FR} \\ \hline \endhead
+Start & Open & A complaint is submitted. & FR-06 \\ \hline
+Open & In Progress & A maintenance staff member accepts it, or a supervisor assigns it. & FR-12, FR-17 \\ \hline
+In Progress & In Progress & A supervisor reassigns it to another maintenance staff member. & FR-17 \\ \hline
+In Progress & Resolved & The assigned staff member or a supervisor marks it Resolved. & FR-13 \\ \hline
+Resolved & Open & The complainant reopens it within 7 days and gives a reason. & FR-10 \\ \hline
+Open & Rejected & A maintenance staff member or a supervisor rejects it with a reason. & FR-20 \\ \hline
+In Progress & Rejected & The assigned staff member or a supervisor rejects it with a reason. & FR-20 \\ \hline
+Resolved & End & 7 days pass without a reopening. & FR-10 \\ \hline
+Rejected & End & The complaint stays Rejected. & FR-20 \\ \hline
+\end{longtable}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\linewidth,height=0.8\textheight,keepaspectratio]{UserAccountState.png}
+\caption{User account state diagram}
+\end{figure}
+
+\begin{longtable}{|>{\raggedright\arraybackslash}p{2.6cm}|>{\raggedright\arraybackslash}p{2.6cm}|>{\raggedright\arraybackslash}p{8.2cm}|>{\raggedright\arraybackslash}p{1.9cm}|}
+\hline \textbf{From} & \textbf{To} & \textbf{Trigger and guard} & \textbf{FR} \\ \hline \endhead
+Start & Pending Activation & A person registers. The IUB ID number is in the IUB Records and has a contact on record. & FR-01 \\ \hline
+Pending Activation & Pending Activation & The OTP is invalid or expired and a new OTP is requested, or the person registers again and gets a new OTP and a new password. & FR-01 \\ \hline
+Pending Activation & Active & The correct OTP is entered within 5 minutes. & FR-01 \\ \hline
+Active & Active & The password is reset with an OTP. & FR-04 \\ \hline
+Active & Locked & The password is wrong 5 times in a row. & FR-02 \\ \hline
+Locked & Locked & A login attempt or a password reset is rejected. & FR-02, FR-04 \\ \hline
+Locked & Active & 15 minutes pass. & FR-02 \\ \hline
+\end{longtable}
+
+\section{OTP state diagram}
+An OTP is created when the system sends it and ends once it is used, expired, or invalid. Only one OTP is valid at a time: a new OTP request cancels the previous one.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\linewidth,height=0.8\textheight,keepaspectratio]{OtpState.png}
+\caption{OTP state diagram}
+\end{figure}
+
+\begin{longtable}{|>{\raggedright\arraybackslash}p{2.6cm}|>{\raggedright\arraybackslash}p{2.6cm}|>{\raggedright\arraybackslash}p{8.2cm}|>{\raggedright\arraybackslash}p{1.9cm}|}
+\hline \textbf{From} & \textbf{To} & \textbf{Trigger and guard} & \textbf{FR} \\ \hline \endhead
+Start & Valid & The system sends a one-time password to the registered email or mobile number. & FR-01, FR-04 \\ \hline
+Valid & Valid & The user enters a wrong OTP (attempt 1 or 2) and the system rejects it. & FR-01, FR-04 \\ \hline
+Valid & Used & The user enters the correct OTP within 5 minutes. & FR-01, FR-04 \\ \hline
+Valid & Expired & 5 minutes pass without a correct OTP. & FR-01, FR-04 \\ \hline
+Valid & Invalid & The user enters a wrong OTP for the 3rd time, or requests a new OTP (the new request cancels this OTP). & FR-01, FR-04 \\ \hline
+Used & End & The OTP is consumed and the account is activated or the password is changed. & FR-01, FR-04 \\ \hline
+Expired & End & No further action is possible. The user may request a new OTP (limit: 5 in 15 minutes). & FR-01, FR-04 \\ \hline
+Invalid & End & No further action is possible. The user may request a new OTP (limit: 5 in 15 minutes). & FR-01, FR-04 \\ \hline
+\end{longtable}
+\section{Notification state diagram}
+A notification is created when an event occurs and stays Read after the user opens it.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\linewidth,height=0.8\textheight,keepaspectratio]{NotificationState.png}
+\caption{Notification state diagram}
+\end{figure}
+
+
+\begin{longtable}{|>{\raggedright\arraybackslash}p{2.6cm}|>{\raggedright\arraybackslash}p{2.6cm}|>{\raggedright\arraybackslash}p{8.2cm}|>{\raggedright\arraybackslash}p{1.9cm}|}
+\hline \textbf{From} & \textbf{To} & \textbf{Trigger and guard} & \textbf{FR} \\ \hline \endhead
+Start & Unread & An event triggers a notification (a complaint is submitted with a Safety Hazard flag, Resolved, Rejected, overdue, assigned, or reassigned). & FR-05, FR-08, FR-13, FR-15, FR-17, FR-20 \\ \hline
+Unread & Read & The user opens the notification (FR-05). & FR-05 \\ \hline
+Read & Read & The user opens the notification again. & FR-05 \\ \hline
+\end{longtable}
+
+
+
+\chapter{Data Flow Diagram (Level 0)}
+The Level 0 data flow diagram (context diagram) shows the whole system as one process and the data that moves between it and the six external entities. The flows come from the use case narratives in Chapter 1.
+
+\begin{landscape}\lspagenum
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\linewidth]{DfdLevel0.png}
+\caption{Data flow diagram, Level 0}
+\end{figure}
+\end{landscape}
+
+\end{document}
