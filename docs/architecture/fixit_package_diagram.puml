@@ -1,0 +1,85 @@
+@startuml fixit_package_diagram
+' FixIt Campus - UML package diagram (layered architecture, MVC inside Presentation)
+' Grayscale only: fill #F1F1F1, border #181818, white background.
+' Font: Times New Roman (Liberation Serif is the same shape if Times is not installed).
+
+top to bottom direction
+
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundCorner 0
+skinparam packageStyle rectangle
+skinparam defaultFontName "Times New Roman"
+skinparam defaultFontSize 16
+skinparam defaultFontColor #181818
+skinparam nodesep 50
+skinparam ranksep 70
+
+skinparam package {
+  BackgroundColor #F1F1F1
+  BorderColor #181818
+  FontColor #181818
+  FontName "Times New Roman"
+  StereotypeFontColor #181818
+  StereotypeFontName "Times New Roman"
+}
+
+skinparam arrow {
+  Color #181818
+  FontColor #181818
+  FontName "Times New Roman"
+  FontSize 15
+}
+
+package "Presentation Layer (MVC: View + Controller)" as PRES {
+  package "templates/ (View)" as TPL {
+  }
+  package "views.py, urls.py (Controller)" as VIEWS {
+  }
+  package "forms.py (Controller: input checks)" as FORMS {
+  }
+}
+
+package "Application Layer (business rules)" as APP {
+  package "services.py" as SERVICES {
+  }
+}
+
+package "Storage Layer (data and outside systems)" as STO {
+  package "models.py (Model: data)" as MODELS {
+  }
+  package "records.py (RecordsClient)" as RECORDS {
+  }
+  package "delivery.py (OtpSender)" as DELIVERY {
+  }
+}
+
+package "constants.py (shared values)\nshared by all layers; imports nothing" as CONST {
+}
+
+package "SQLite database <<external>>" as DB {
+}
+package "IUB Records <<external>>" as IUBR {
+}
+package "Message Delivery Service <<external>>" as MDS {
+}
+
+' Inside Presentation
+VIEWS .down.> TPL : renders
+VIEWS .down.> FORMS : validates with
+
+' Between layers: top to bottom only
+PRES .down.> APP : calls services
+APP .down.> STO : reads and writes data,\nverifies IDs, sends OTPs
+
+
+' constants.py is shared by all layers. Arrows to it are left out on purpose:
+' it imports nothing, so it adds no coupling. The invisible link only sets its position.
+APP -[hidden]right-> CONST
+
+' Storage layer to the outside world
+MODELS .down.> DB : stores in
+RECORDS .down.> IUBR : reads from
+DELIVERY .down.> MDS : sends via
+
+@enduml
