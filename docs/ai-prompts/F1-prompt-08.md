@@ -1,0 +1,1 @@
+Yes, go ahead. For the constants.py docstring, use this split you gave in the Stage 4 summary: MSG_OTP_INCORRECT and MSG_OTP_NO_LONGER_VALID come from the UI design; MSG_OTP_EXPIRED, MSG_OTP_FORMAT and MSG_NEW_OTP_SENT are our own wording. Neither group has been checked against the SRS Wiki.
