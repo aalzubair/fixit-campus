@@ -1,0 +1,1 @@
+Stage 1 is approved and committed. Start Stage 2 only (services.py). Keep the code simple and follow the coding standards. Stop when it is done with a plain-language summary, then run flake8, black --check and pylint and report the results.
