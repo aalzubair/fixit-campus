@@ -41,18 +41,18 @@ from campus.models import Otp, User
 from campus.records import UniversityMember, get_records_client
 
 
-class RegistrationError(Exception):
-    """A registration step was rejected by a business rule.
+class ServiceError(Exception):
+    """A service step (for example registration) was rejected by a business rule.
 
     Attributes:
-        message: The exact SRS message to show to the user.
+        message: The user-facing message from ``constants.py``.
     """
 
     def __init__(self, message: str) -> None:
         """Store the user-facing message.
 
         Args:
-            message: The exact SRS message to show to the user.
+            message: The user-facing message from ``constants.py``.
         """
         super().__init__(message)
         self.message = message
@@ -72,7 +72,7 @@ def register_user(id_number: str, password: str) -> None:
         password: The chosen password in plain text.
 
     Raises:
-        RegistrationError: If the password is too short, the ID is not in
+        ServiceError: If the password is too short, the ID is not in
             the records, the ID has no contact details, the ID is already
             registered, or too many OTPs were requested.
     """
@@ -95,7 +95,7 @@ def request_new_registration_otp(id_number: str) -> None:
         id_number: The IUB ID number of a user waiting for activation.
 
     Raises:
-        RegistrationError: If the user cannot be found or is already
+        ServiceError: If the user cannot be found or is already
             registered, the ID has no contact details any more, or too many
             OTPs were requested.
     """
@@ -113,12 +113,14 @@ def verify_registration_otp(id_number: str, code: str) -> None:
         code: The OTP typed by the user.
 
     Raises:
-        RegistrationError: If the user cannot be found or is already
+        ServiceError: If the user cannot be found or is already
             registered, or the OTP is wrong, expired or no longer valid.
     """
     user = _get_pending_user(id_number)
     otp = _check_otp(user, OTP_PURPOSE_REGISTRATION, code)
+    # One transaction, so the OTP is never used up without the account activating.
     with transaction.atomic():
+        otp.status = OTP_USED
         otp.save()
         user.mark_active()
         user.save()
@@ -134,10 +136,10 @@ def _check_password_length(password: str) -> None:
         password: The chosen password in plain text.
 
     Raises:
-        RegistrationError: If the password is too short.
+        ServiceError: If the password is too short.
     """
     if len(password) < PASSWORD_MIN_LENGTH:
-        raise RegistrationError(MSG_PASSWORD_TOO_SHORT)
+        raise ServiceError(MSG_PASSWORD_TOO_SHORT)
 
 
 def _find_member_and_destination(id_number: str) -> tuple[UniversityMember, str]:
@@ -152,15 +154,15 @@ def _find_member_and_destination(id_number: str) -> tuple[UniversityMember, str]
         The member from the records and their email or mobile number.
 
     Raises:
-        RegistrationError: If the ID is not in the records or has no
+        ServiceError: If the ID is not in the records or has no
             contact details.
     """
     member = get_records_client().find_member(id_number)
     if member is None:
-        raise RegistrationError(MSG_ID_NOT_FOUND)
+        raise ServiceError(MSG_ID_NOT_FOUND)
     destination = member.email or member.mobile
     if not destination:
-        raise RegistrationError(MSG_NO_CONTACT_DETAILS)
+        raise ServiceError(MSG_NO_CONTACT_DETAILS)
     return member, destination
 
 
@@ -173,10 +175,10 @@ def _raise_if_registered(user: User) -> None:
         user: The user to check.
 
     Raises:
-        RegistrationError: If the account is not pending activation.
+        ServiceError: If the account is not pending activation.
     """
     if user.account_status != ACCOUNT_PENDING_ACTIVATION:
-        raise RegistrationError(MSG_ALREADY_REGISTERED)
+        raise ServiceError(MSG_ALREADY_REGISTERED)
 
 
 def _get_or_build_unregistered_user(id_number: str) -> User:
@@ -189,7 +191,7 @@ def _get_or_build_unregistered_user(id_number: str) -> User:
         The existing pending user, or a new user that is not saved yet.
 
     Raises:
-        RegistrationError: If the ID is already registered.
+        ServiceError: If the ID is already registered.
     """
     user = User.objects.filter(username=id_number).first()
     if user is None:
@@ -208,12 +210,12 @@ def _get_pending_user(id_number: str) -> User:
         The pending user.
 
     Raises:
-        RegistrationError: If no user has this ID, or the ID is already
+        ServiceError: If no user has this ID, or the ID is already
             registered.
     """
     user = User.objects.filter(username=id_number).first()
     if user is None:
-        raise RegistrationError(MSG_ID_NOT_FOUND)
+        raise ServiceError(MSG_ID_NOT_FOUND)
     _raise_if_registered(user)
     return user
 
@@ -240,12 +242,12 @@ def _check_request_limit(user: User, now: datetime) -> None:
         now: The current time.
 
     Raises:
-        RegistrationError: If the limit for the time window is reached.
+        ServiceError: If the limit for the time window is reached.
     """
     window_start = now - timedelta(minutes=OTP_REQUEST_WINDOW_MINUTES)
     recent_requests = Otp.objects.filter(user=user, created_at__gt=window_start)
     if recent_requests.count() >= OTP_REQUEST_LIMIT:
-        raise RegistrationError(MSG_TOO_MANY_REQUESTS)
+        raise ServiceError(MSG_TOO_MANY_REQUESTS)
 
 
 def _issue_otp(user: User, destination: str, purpose: str) -> None:
@@ -260,7 +262,7 @@ def _issue_otp(user: User, destination: str, purpose: str) -> None:
         purpose: One of the OTP purpose constants.
 
     Raises:
-        RegistrationError: If too many OTPs were requested.
+        ServiceError: If too many OTPs were requested.
     """
     now = timezone.now()
     _check_request_limit(user, now)
@@ -280,10 +282,10 @@ def _issue_otp(user: User, destination: str, purpose: str) -> None:
 def _check_otp(user: User, purpose: str, code: str) -> Otp:
     """Check a typed OTP against the user's valid OTP.
 
-    Rejections are saved straight away (expired status, wrong-attempt
-    count) so they still count after the error is raised. On success the
-    OTP is marked used but NOT saved, so the caller can save it together
-    with its own changes.
+    This function only rejects or returns; it never marks the OTP used,
+    so the caller decides what success means. Rejections are saved
+    straight away (expired status, wrong-attempt count) so they still
+    count after the error is raised.
 
     Args:
         user: The user who typed the OTP.
@@ -291,24 +293,43 @@ def _check_otp(user: User, purpose: str, code: str) -> Otp:
         code: The OTP typed by the user.
 
     Returns:
-        The matching OTP, marked used but not saved.
+        The matching valid OTP, unchanged.
 
     Raises:
-        RegistrationError: If there is no valid OTP, or the OTP is expired
+        ServiceError: If there is no valid OTP, or the OTP is expired
             or wrong.
     """
     otp = Otp.objects.filter(user=user, purpose=purpose, status=OTP_VALID).first()
     if otp is None:
-        raise RegistrationError(MSG_OTP_NO_LONGER_VALID)
+        raise ServiceError(_missing_otp_message(user, purpose))
     if otp.is_expired(timezone.now()):
         otp.status = OTP_EXPIRED
         otp.save()
-        raise RegistrationError(MSG_OTP_EXPIRED)
+        raise ServiceError(MSG_OTP_EXPIRED)
     # check_password compares hashes in constant time.
     if not check_password(code, otp.code_hash):
-        raise RegistrationError(_record_wrong_attempt(otp))
-    otp.status = OTP_USED
+        raise ServiceError(_record_wrong_attempt(otp))
     return otp
+
+
+def _missing_otp_message(user: User, purpose: str) -> str:
+    """Choose the message to show when the user has no valid OTP.
+
+    The newest OTP tells why none is valid, so a user who submits again
+    after expiry is told "expired" again, not "too many wrong attempts".
+
+    Args:
+        user: The user who typed the OTP.
+        purpose: One of the OTP purpose constants.
+
+    Returns:
+        The expired message if the newest OTP expired, otherwise the
+        no-longer-valid message.
+    """
+    newest_otp = Otp.objects.filter(user=user, purpose=purpose).first()
+    if newest_otp is not None and newest_otp.status == OTP_EXPIRED:
+        return MSG_OTP_EXPIRED
+    return MSG_OTP_NO_LONGER_VALID
 
 
 def _record_wrong_attempt(otp: Otp) -> str:

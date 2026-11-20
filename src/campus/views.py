@@ -23,7 +23,7 @@ from campus.constants import (
 )
 from campus.forms import OtpForm, RegisterForm
 from campus.services import (
-    RegistrationError,
+    ServiceError,
     register_user,
     request_new_registration_otp,
     verify_registration_otp,
@@ -44,7 +44,7 @@ def register_view(request: HttpRequest) -> HttpResponse:
         id_number = form.cleaned_data["id_number"]
         try:
             register_user(id_number, form.cleaned_data["password"])
-        except RegistrationError as error:
+        except ServiceError as error:
             form.add_error(None, error.message)
         else:
             request.session[SESSION_REGISTER_ID_NUMBER] = id_number
@@ -69,7 +69,7 @@ def register_verify_view(request: HttpRequest) -> HttpResponse:
     if request.method == "POST" and form.is_valid():
         try:
             verify_registration_otp(id_number, form.cleaned_data["otp"])
-        except RegistrationError as error:
+        except ServiceError as error:
             form.add_error(None, error.message)
         else:
             del request.session[SESSION_REGISTER_ID_NUMBER]
@@ -96,7 +96,7 @@ def register_new_otp_view(request: HttpRequest) -> HttpResponse:
         return redirect(URL_NAME_REGISTER)
     try:
         request_new_registration_otp(id_number)
-    except RegistrationError as error:
+    except ServiceError as error:
         messages.error(request, error.message)
     else:
         messages.success(request, MSG_NEW_OTP_SENT)

@@ -31,6 +31,9 @@ ALLOWED_IMPORTS = {
     "apps": frozenset(),
 }
 IMMUTABLE_TYPES = (str, int, tuple, frozenset)
+# Views could reach the database without importing models (get_user_model()),
+# so the import check alone cannot catch this.
+FORBIDDEN_VIEW_CODE = (".objects", ".save(")
 
 # A views module that breaks the rules in each import style.
 FORBIDDEN_VIEWS_SOURCE = """
@@ -106,6 +109,13 @@ class ArchitectureTests(SimpleTestCase):
         bad_module.write_text(FORBIDDEN_VIEWS_SOURCE, encoding="utf-8")
         forbidden = project_imports(bad_module) - ALLOWED_IMPORTS["views"]
         self.assertEqual(forbidden, {"models", "records", "delivery"})
+
+    def test_views_do_not_touch_the_database_directly(self) -> None:
+        """views.py has no ``.objects`` and no ``.save(``; services do that."""
+        views_source = app_modules()["views"].read_text(encoding="utf-8")
+        for forbidden in FORBIDDEN_VIEW_CODE:
+            with self.subTest(code=forbidden):
+                self.assertNotIn(forbidden, views_source)
 
     def test_constants_are_immutable(self) -> None:
         """Every constant is a str, int, tuple or frozenset."""

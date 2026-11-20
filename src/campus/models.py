@@ -79,9 +79,12 @@ class Otp(models.Model):
     expires_at = models.DateTimeField()
 
     class Meta:
-        """Show the newest OTP first."""
+        """Show the newest OTP first.
 
-        ordering = ("-created_at",)
+        ``-id`` breaks ties when two OTPs share the same ``created_at``.
+        """
+
+        ordering = ("-created_at", "-id")
 
     def __str__(self) -> str:
         """Return a short description without the code.

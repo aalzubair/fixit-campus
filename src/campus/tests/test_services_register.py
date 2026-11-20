@@ -30,7 +30,7 @@ from campus.constants import (
 )
 from campus.models import Otp, User
 from campus.services import (
-    RegistrationError,
+    ServiceError,
     register_user,
     request_new_registration_otp,
     verify_registration_otp,
@@ -102,20 +102,20 @@ class RegisterUserTests(RegistrationTestCase):
 
     def test_unknown_id_is_rejected(self) -> None:
         """AC 7: an ID that is not in the records is rejected."""
-        with self.assertRaisesMessage(RegistrationError, MSG_ID_NOT_FOUND):
+        with self.assertRaisesMessage(ServiceError, MSG_ID_NOT_FOUND):
             register_user(UNKNOWN_ID, GOOD_PASSWORD)
         self.assertFalse(User.objects.exists())
         self.assertEqual(self.sender.sent_messages, [])
 
     def test_empty_id_is_rejected_as_not_found(self) -> None:
         """An empty ID is not in the records."""
-        with self.assertRaisesMessage(RegistrationError, MSG_ID_NOT_FOUND):
+        with self.assertRaisesMessage(ServiceError, MSG_ID_NOT_FOUND):
             register_user("", GOOD_PASSWORD)
 
     def test_active_id_is_rejected_as_already_registered(self) -> None:
         """AC 8: an activated ID cannot register again."""
         self.make_active_user(STUDENT_ID)
-        with self.assertRaisesMessage(RegistrationError, MSG_ALREADY_REGISTERED):
+        with self.assertRaisesMessage(ServiceError, MSG_ALREADY_REGISTERED):
             register_user(STUDENT_ID, NEW_PASSWORD)
         user = User.objects.get(username=STUDENT_ID)
         self.assertTrue(user.check_password(GOOD_PASSWORD))
@@ -125,13 +125,13 @@ class RegisterUserTests(RegistrationTestCase):
         user = self.make_active_user(STUDENT_ID)
         user.account_status = ACCOUNT_LOCKED
         user.save()
-        with self.assertRaisesMessage(RegistrationError, MSG_ALREADY_REGISTERED):
+        with self.assertRaisesMessage(ServiceError, MSG_ALREADY_REGISTERED):
             register_user(STUDENT_ID, NEW_PASSWORD)
 
     def test_seven_character_password_is_rejected(self) -> None:
         """AC 9 boundary: one character below the minimum is rejected."""
         short_password = "a" * (PASSWORD_MIN_LENGTH - 1)
-        with self.assertRaisesMessage(RegistrationError, MSG_PASSWORD_TOO_SHORT):
+        with self.assertRaisesMessage(ServiceError, MSG_PASSWORD_TOO_SHORT):
             register_user(STUDENT_ID, short_password)
         self.assertFalse(User.objects.exists())
 
@@ -142,12 +142,12 @@ class RegisterUserTests(RegistrationTestCase):
 
     def test_empty_password_is_rejected(self) -> None:
         """An empty password is shorter than the minimum."""
-        with self.assertRaisesMessage(RegistrationError, MSG_PASSWORD_TOO_SHORT):
+        with self.assertRaisesMessage(ServiceError, MSG_PASSWORD_TOO_SHORT):
             register_user(STUDENT_ID, "")
 
     def test_id_without_contact_details_is_rejected(self) -> None:
         """AC 10: no email and no mobile number means no registration."""
-        with self.assertRaisesMessage(RegistrationError, MSG_NO_CONTACT_DETAILS):
+        with self.assertRaisesMessage(ServiceError, MSG_NO_CONTACT_DETAILS):
             register_user(NO_CONTACT_ID, GOOD_PASSWORD)
         self.assertFalse(User.objects.exists())
 
@@ -177,8 +177,8 @@ class RegisterUserTests(RegistrationTestCase):
         self.assertFalse(Otp.objects.exists())
 
     def test_registration_error_keeps_message(self) -> None:
-        """RegistrationError exposes the message for the view."""
-        error = RegistrationError(MSG_ID_NOT_FOUND)
+        """ServiceError exposes the message for the view."""
+        error = ServiceError(MSG_ID_NOT_FOUND)
         self.assertEqual(error.message, MSG_ID_NOT_FOUND)
         self.assertEqual(str(error), MSG_ID_NOT_FOUND)
 
@@ -218,12 +218,12 @@ class VerifyOtpTests(RegistrationTestCase):
         """A used OTP no longer works."""
         code = self.sender.last_code
         verify_registration_otp(STUDENT_ID, code)
-        with self.assertRaisesMessage(RegistrationError, MSG_ALREADY_REGISTERED):
+        with self.assertRaisesMessage(ServiceError, MSG_ALREADY_REGISTERED):
             verify_registration_otp(STUDENT_ID, code)
 
     def test_wrong_otp_is_rejected_and_user_may_retry(self) -> None:
         """AC 3: a wrong OTP is rejected, then the correct one still works."""
-        with self.assertRaisesMessage(RegistrationError, MSG_OTP_INCORRECT):
+        with self.assertRaisesMessage(ServiceError, MSG_OTP_INCORRECT):
             verify_registration_otp(STUDENT_ID, self.wrong_code())
         verify_registration_otp(STUDENT_ID, self.sender.last_code)
         user = User.objects.get(username=STUDENT_ID)
@@ -231,28 +231,28 @@ class VerifyOtpTests(RegistrationTestCase):
 
     def test_wrong_attempt_is_still_counted_after_error(self) -> None:
         """The wrong attempt is saved even though an error is raised."""
-        with self.assertRaises(RegistrationError):
+        with self.assertRaises(ServiceError):
             verify_registration_otp(STUDENT_ID, self.wrong_code())
         self.assertEqual(latest_otp(STUDENT_ID).wrong_attempts, 1)
 
     def test_non_digit_otp_is_rejected_as_incorrect(self) -> None:
         """Invalid input: letters can never match the OTP."""
-        with self.assertRaisesMessage(RegistrationError, MSG_OTP_INCORRECT):
+        with self.assertRaisesMessage(ServiceError, MSG_OTP_INCORRECT):
             verify_registration_otp(STUDENT_ID, "abcdef")
 
     def test_second_wrong_otp_keeps_otp_valid(self) -> None:
         """AC 4 boundary: after 2 wrong tries the OTP is still valid."""
         for _ in range(2):
-            with self.assertRaisesMessage(RegistrationError, MSG_OTP_INCORRECT):
+            with self.assertRaisesMessage(ServiceError, MSG_OTP_INCORRECT):
                 verify_registration_otp(STUDENT_ID, self.wrong_code())
         self.assertEqual(latest_otp(STUDENT_ID).status, OTP_VALID)
 
     def test_third_wrong_otp_invalidates_otp(self) -> None:
         """AC 4: the 3rd wrong try makes the OTP invalid."""
         for _ in range(2):
-            with self.assertRaises(RegistrationError):
+            with self.assertRaises(ServiceError):
                 verify_registration_otp(STUDENT_ID, self.wrong_code())
-        with self.assertRaisesMessage(RegistrationError, MSG_OTP_NO_LONGER_VALID):
+        with self.assertRaisesMessage(ServiceError, MSG_OTP_NO_LONGER_VALID):
             verify_registration_otp(STUDENT_ID, self.wrong_code())
         otp = latest_otp(STUDENT_ID)
         self.assertEqual(otp.status, OTP_INVALID)
@@ -261,9 +261,9 @@ class VerifyOtpTests(RegistrationTestCase):
     def test_correct_otp_after_invalidation_is_rejected(self) -> None:
         """AC 4: once invalid, even the correct code needs a new OTP."""
         for _ in range(3):
-            with self.assertRaises(RegistrationError):
+            with self.assertRaises(ServiceError):
                 verify_registration_otp(STUDENT_ID, self.wrong_code())
-        with self.assertRaisesMessage(RegistrationError, MSG_OTP_NO_LONGER_VALID):
+        with self.assertRaisesMessage(ServiceError, MSG_OTP_NO_LONGER_VALID):
             verify_registration_otp(STUDENT_ID, self.sender.last_code)
 
     def test_otp_is_accepted_at_four_minutes_fifty_nine(self) -> None:
@@ -275,14 +275,21 @@ class VerifyOtpTests(RegistrationTestCase):
     def test_otp_is_rejected_at_five_minutes_one_second(self) -> None:
         """AC 5 boundary: just after the 5 minutes is expired."""
         self.move_clock(timedelta(minutes=5, seconds=1))
-        with self.assertRaisesMessage(RegistrationError, MSG_OTP_EXPIRED):
+        with self.assertRaisesMessage(ServiceError, MSG_OTP_EXPIRED):
             verify_registration_otp(STUDENT_ID, self.sender.last_code)
         self.assertEqual(latest_otp(STUDENT_ID).status, OTP_EXPIRED)
+
+    def test_second_submit_after_expiry_still_says_expired(self) -> None:
+        """AC 5: submitting again after expiry repeats the expired message."""
+        self.move_clock(timedelta(minutes=5, seconds=1))
+        for _ in range(2):
+            with self.assertRaisesMessage(ServiceError, MSG_OTP_EXPIRED):
+                verify_registration_otp(STUDENT_ID, self.sender.last_code)
 
     def test_new_otp_can_be_requested_after_expiry(self) -> None:
         """AC 5: after expiry the user can request and use a new OTP."""
         self.move_clock(timedelta(minutes=6))
-        with self.assertRaises(RegistrationError):
+        with self.assertRaises(ServiceError):
             verify_registration_otp(STUDENT_ID, self.sender.last_code)
         request_new_registration_otp(STUDENT_ID)
         verify_registration_otp(STUDENT_ID, self.sender.last_code)
@@ -291,7 +298,7 @@ class VerifyOtpTests(RegistrationTestCase):
 
     def test_verify_for_unregistered_id_is_rejected(self) -> None:
         """Exception: there is no account to verify for an unknown ID."""
-        with self.assertRaisesMessage(RegistrationError, MSG_ID_NOT_FOUND):
+        with self.assertRaisesMessage(ServiceError, MSG_ID_NOT_FOUND):
             verify_registration_otp(UNKNOWN_ID, self.sender.last_code)
 
 
@@ -311,6 +318,31 @@ class RequestNewOtpTests(RegistrationTestCase):
         self.assertEqual(earlier_otp.status, OTP_INVALID)
         self.assertEqual(Otp.objects.filter(status=OTP_VALID).count(), 1)
 
+    def test_old_code_is_rejected_after_new_otp(self) -> None:
+        """AC 6: the earlier code stops working; the new code works."""
+        old_code = self.sender.last_code
+        # A fixed new code, so it can never match the old one by chance.
+        new_code = self.wrong_code()
+        self.start_patch("campus.services._generate_otp_code", new_code)
+        request_new_registration_otp(STUDENT_ID)
+        with self.assertRaisesMessage(ServiceError, MSG_OTP_INCORRECT):
+            verify_registration_otp(STUDENT_ID, old_code)
+        verify_registration_otp(STUDENT_ID, new_code)
+        user = User.objects.get(username=STUDENT_ID)
+        self.assertEqual(user.account_status, ACCOUNT_ACTIVE)
+
+    def test_failed_new_otp_delivery_keeps_previous_otp_valid(self) -> None:
+        """Exception: if the new OTP cannot be sent, the earlier one still works."""
+        earlier_code = self.sender.last_code
+        self.start_patch("campus.services.get_otp_sender", FailingOtpSender())
+        with self.assertRaises(ConnectionError):
+            request_new_registration_otp(STUDENT_ID)
+        self.assertEqual(Otp.objects.count(), 1)
+        self.assertEqual(latest_otp(STUDENT_ID).status, OTP_VALID)
+        verify_registration_otp(STUDENT_ID, earlier_code)
+        user = User.objects.get(username=STUDENT_ID)
+        self.assertEqual(user.account_status, ACCOUNT_ACTIVE)
+
     def test_new_otp_is_sent_and_works(self) -> None:
         """AC 6: the new OTP is sent and activates the account."""
         request_new_registration_otp(STUDENT_ID)
@@ -329,7 +361,7 @@ class RequestNewOtpTests(RegistrationTestCase):
         """AC 11: the 6th request within 15 minutes is rejected."""
         for _ in range(4):
             request_new_registration_otp(STUDENT_ID)
-        with self.assertRaisesMessage(RegistrationError, MSG_TOO_MANY_REQUESTS):
+        with self.assertRaisesMessage(ServiceError, MSG_TOO_MANY_REQUESTS):
             request_new_registration_otp(STUDENT_ID)
         self.assertEqual(len(self.sender.sent_messages), 5)
 
@@ -337,7 +369,7 @@ class RequestNewOtpTests(RegistrationTestCase):
         """AC 11: a rejected request does not cancel the current OTP."""
         for _ in range(4):
             request_new_registration_otp(STUDENT_ID)
-        with self.assertRaises(RegistrationError):
+        with self.assertRaises(ServiceError):
             request_new_registration_otp(STUDENT_ID)
         verify_registration_otp(STUDENT_ID, self.sender.last_code)
 
@@ -345,13 +377,22 @@ class RequestNewOtpTests(RegistrationTestCase):
         """AC 11: registering again is also an OTP request."""
         for _ in range(4):
             register_user(STUDENT_ID, GOOD_PASSWORD)
-        with self.assertRaisesMessage(RegistrationError, MSG_TOO_MANY_REQUESTS):
+        with self.assertRaisesMessage(ServiceError, MSG_TOO_MANY_REQUESTS):
             register_user(STUDENT_ID, NEW_PASSWORD)
         user = User.objects.get(username=STUDENT_ID)
         self.assertTrue(user.check_password(GOOD_PASSWORD))
 
-    def test_requests_older_than_window_do_not_count(self) -> None:
-        """AC 11: after 15 minutes the user may request again."""
+    def test_sixth_request_at_fourteen_fifty_nine_is_rejected(self) -> None:
+        """AC 11 boundary: just inside the 15 minutes the limit still applies."""
+        for _ in range(4):
+            request_new_registration_otp(STUDENT_ID)
+        self.move_clock(timedelta(minutes=14, seconds=59))
+        with self.assertRaisesMessage(ServiceError, MSG_TOO_MANY_REQUESTS):
+            request_new_registration_otp(STUDENT_ID)
+        self.assertEqual(len(self.sender.sent_messages), 5)
+
+    def test_sixth_request_at_fifteen_minutes_is_accepted(self) -> None:
+        """AC 11 boundary: after 15 minutes the user may request again."""
         for _ in range(4):
             request_new_registration_otp(STUDENT_ID)
         self.move_clock(timedelta(minutes=15))
@@ -360,11 +401,11 @@ class RequestNewOtpTests(RegistrationTestCase):
 
     def test_new_otp_for_unregistered_id_is_rejected(self) -> None:
         """Exception: no pending account exists for an unknown ID."""
-        with self.assertRaisesMessage(RegistrationError, MSG_ID_NOT_FOUND):
+        with self.assertRaisesMessage(ServiceError, MSG_ID_NOT_FOUND):
             request_new_registration_otp(UNKNOWN_ID)
 
     def test_new_otp_for_active_user_is_rejected(self) -> None:
         """An activated account does not need a registration OTP."""
         verify_registration_otp(STUDENT_ID, self.sender.last_code)
-        with self.assertRaisesMessage(RegistrationError, MSG_ALREADY_REGISTERED):
+        with self.assertRaisesMessage(ServiceError, MSG_ALREADY_REGISTERED):
             request_new_registration_otp(STUDENT_ID)

@@ -1,7 +1,18 @@
 """Named constants for FixIt Campus: rules, roles, statuses and messages.
 
 Every value is immutable (str, int or tuple) so no module can change it.
-Messages shown to users match the SRS word for word.
+
+User-facing messages come from three sources:
+
+- Copied word for word from SRS FR-01: ``MSG_ID_NOT_FOUND``,
+  ``MSG_ALREADY_REGISTERED``, ``MSG_PASSWORD_TOO_SHORT``,
+  ``MSG_NO_CONTACT_DETAILS`` and ``MSG_TOO_MANY_REQUESTS``.
+- From the UI design: ``MSG_OTP_INCORRECT`` and ``MSG_OTP_NO_LONGER_VALID``.
+- Our own wording: ``MSG_OTP_EXPIRED``, ``MSG_OTP_FORMAT`` and
+  ``MSG_NEW_OTP_SENT``.
+
+The UI-design and own-wording messages have not been checked against the
+SRS Wiki yet.
 """
 
 # --- Roles (the value stored in the database and in the university records) ---
