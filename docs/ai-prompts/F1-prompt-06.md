@@ -1,0 +1,1 @@
+Stage 4 is approved and committed. Fix only the pylint warning at src/fixit_campus/settings.py line 89 by adding a "# pylint: disable=line-too-long" comment on that line. Change nothing else, then run flake8, black --check and pylint and report the results.
