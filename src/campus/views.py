@@ -1,3 +1,1 @@
-from django.shortcuts import render
-
-# Create your views here.
+"""Views for FixIt Campus (filled in during Stage 3)."""

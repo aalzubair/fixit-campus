@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "campus",
 ]
 
 MIDDLEWARE = [
@@ -115,3 +116,14 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = "static/"
+
+
+# FixIt Campus
+
+# Must be set before the first migration; the IUB ID number is the username.
+AUTH_USER_MODEL = "campus.User"
+
+# Outside systems, chosen by dotted class path so tests and production can swap them.
+FIXIT_OTP_SENDER = "campus.delivery.ConsoleOtpSender"
+FIXIT_RECORDS_CLIENT = "campus.records.JsonRecordsClient"
+FIXIT_RECORDS_FILE = BASE_DIR / "campus" / "data" / "iub_records.json"
