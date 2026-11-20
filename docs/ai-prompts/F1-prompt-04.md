@@ -1,0 +1,1 @@
+Stage 2 is approved and committed. Start Stage 3 only (forms, views, urls and templates), including the include("campus.urls") in src/fixit_campus/urls.py. Keep the code simple and follow the coding standards. Stop when it is done with a plain-language summary, then run flake8, black --check and pylint and report the results.
