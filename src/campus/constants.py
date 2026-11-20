@@ -63,6 +63,20 @@ OTP_REQUEST_LIMIT = 5
 OTP_REQUEST_WINDOW_MINUTES = 15
 PASSWORD_MIN_LENGTH = 8
 
+# --- Input shape (checked by forms) ---
+ID_NUMBER_MAX_LENGTH = 20
+OTP_PATTERN = rf"^\d{{{OTP_LENGTH}}}$"
+
+# --- Presentation: session key, URL names and templates ---
+SESSION_REGISTER_ID_NUMBER = "register_id_number"
+URL_NAME_REGISTER = "register"
+URL_NAME_REGISTER_VERIFY = "register_verify"
+URL_NAME_REGISTER_NEW_OTP = "register_new_otp"
+URL_NAME_REGISTER_DONE = "register_done"
+TEMPLATE_REGISTER = "campus/register.html"
+TEMPLATE_REGISTER_VERIFY = "campus/register_verify.html"
+TEMPLATE_REGISTER_DONE = "campus/register_done.html"
+
 # --- University records file (JSON keys) ---
 RECORDS_FILE_ENCODING = "utf-8"
 RECORD_KEY_ID_NUMBER = "id_number"
@@ -90,3 +104,4 @@ MSG_OTP_NO_LONGER_VALID = (
 )
 MSG_OTP_EXPIRED = "This OTP has expired. Please request a new OTP."
 MSG_OTP_FORMAT = "Enter the 6-digit OTP."
+MSG_NEW_OTP_SENT = "A new OTP has been sent. The earlier OTP no longer works."
