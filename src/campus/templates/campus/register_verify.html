@@ -11,9 +11,7 @@
     mobile number. Enter it below to activate your account.
   </p>
 
-  {% for message in messages %}
-    <div class="small mb-3 {% if message.tags == 'error' %}text-danger{% else %}text-success{% endif %}">{{ message }}</div>
-  {% endfor %}
+  {% include "campus/_messages.html" %}
 
   <form method="post" action="{% url 'register_verify' %}" novalidate>
     {% csrf_token %}

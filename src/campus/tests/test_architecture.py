@@ -5,7 +5,6 @@ for it below. Imports go downwards only and never skip a layer.
 """
 
 import ast
-import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -22,6 +21,7 @@ APP_PACKAGE = "campus"
 ALLOWED_IMPORTS = {
     "views": frozenset({"forms", "services", "constants"}),
     "urls": frozenset({"views", "forms", "services", "constants"}),
+    "middleware": frozenset({"constants"}),
     "forms": frozenset({"constants"}),
     "services": frozenset({"models", "delivery", "records", "constants"}),
     "models": frozenset({"constants"}),
@@ -43,6 +43,13 @@ from . import delivery
 from .services import register_user
 import os
 """
+
+# A module that names constants in a docstring and a comment but uses only one.
+DOCSTRING_AND_COMMENT_SOURCE = '''
+"""Mentions MSG_IN_DOCSTRING."""
+# Mentions MSG_IN_COMMENT.
+print(MSG_IN_CODE, settings.MSG_AS_ATTRIBUTE)
+'''
 
 
 def app_modules() -> dict[str, Path]:
@@ -86,6 +93,30 @@ def project_imports(path: Path) -> set[str]:
     return found
 
 
+def names_used_in_code(path: Path) -> set[str]:
+    """List the names a file reads in its code.
+
+    Docstrings and comments are not code, so a name that appears only
+    there is not a use. Assignments (like the definitions in
+    ``constants.py``) are not uses either; reading a name or an
+    attribute is.
+
+    Args:
+        path: The Python file to read.
+
+    Returns:
+        Every name read as a variable or an attribute.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    used = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+            used.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            used.add(node.attr)
+    return used
+
+
 class ArchitectureTests(SimpleTestCase):
     """The dependency table and the constants rules are respected."""
 
@@ -126,11 +157,23 @@ class ArchitectureTests(SimpleTestCase):
                     self.assertIsInstance(value, IMMUTABLE_TYPES)
 
     def test_every_constant_is_used(self) -> None:
-        """Every constant appears somewhere besides its own definition."""
-        sources = [path.read_text(encoding="utf-8") for path in APP_DIR.glob("*.py")]
-        all_source = "\n".join(sources)
+        """Every constant is read by app code (docstrings and comments do not count)."""
+        used = set()
+        for path in APP_DIR.glob("*.py"):
+            used |= names_used_in_code(path)
         for name in dir(constants):
             if name.isupper():
                 with self.subTest(constant=name):
-                    uses = re.findall(rf"\b{name}\b", all_source)
-                    self.assertGreater(len(uses), 1)
+                    self.assertIn(name, used)
+
+    def test_usage_check_ignores_docstrings_and_comments(self) -> None:
+        """The usage check itself works: only names in code are found."""
+        temp_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, temp_dir)
+        sample = Path(temp_dir) / "sample.py"
+        sample.write_text(DOCSTRING_AND_COMMENT_SOURCE, encoding="utf-8")
+        used = names_used_in_code(sample)
+        self.assertIn("MSG_IN_CODE", used)
+        self.assertIn("MSG_AS_ATTRIBUTE", used)
+        self.assertNotIn("MSG_IN_DOCSTRING", used)
+        self.assertNotIn("MSG_IN_COMMENT", used)

@@ -1,9 +1,11 @@
 """Business rules for FixIt Campus (Application layer).
 
-This module holds the rules for FR-01 (register with OTP verification).
-It never sees the request, the session or HTML. Outside systems are used
-only through ``records.py`` (university records) and ``delivery.py``
-(sending the OTP).
+This module holds the rules for FR-01 (register with OTP verification),
+FR-02 (log in, account lock, IUB records check) and FR-04 (reset password).
+FR-03 (log out, idle timeout) only changes the session, so it lives in the
+Presentation layer. This module never sees the request, the session or HTML.
+Outside systems are used only through ``records.py`` (university records)
+and ``delivery.py`` (sending the OTP).
 """
 
 import secrets
@@ -15,9 +17,15 @@ from django.db import transaction
 from django.utils import timezone
 
 from campus.constants import (
+    ACCOUNT_ACTIVE,
+    ACCOUNT_LOCK_MINUTES,
     ACCOUNT_PENDING_ACTIVATION,
+    LOGIN_MAX_FAILED_ATTEMPTS,
+    MSG_ACCOUNT_LOCKED,
+    MSG_ACCOUNT_NO_LONGER_ACTIVE,
     MSG_ALREADY_REGISTERED,
     MSG_ID_NOT_FOUND,
+    MSG_INVALID_LOGIN,
     MSG_NO_CONTACT_DETAILS,
     MSG_OTP_EXPIRED,
     MSG_OTP_INCORRECT,
@@ -29,6 +37,7 @@ from campus.constants import (
     OTP_LENGTH,
     OTP_LIFETIME_MINUTES,
     OTP_MAX_WRONG_ATTEMPTS,
+    OTP_PURPOSE_PASSWORD_RESET,
     OTP_PURPOSE_REGISTRATION,
     OTP_REQUEST_LIMIT,
     OTP_REQUEST_WINDOW_MINUTES,
@@ -126,6 +135,111 @@ def verify_registration_otp(id_number: str, code: str) -> None:
         user.save()
 
 
+def log_in_user(id_number: str, password: str) -> User:
+    """Check the ID and password and return the user who may log in (FR-02).
+
+    The checks run in a fixed order: unknown or pending ID, lock, password,
+    then the IUB records. The records are asked only after the correct
+    password, so a wrong password never reveals whether a member has left.
+    Starting the session is the view's job.
+
+    No ``transaction.atomic()`` is used here on purpose: a wrong password
+    must stay counted even though an error is raised afterwards.
+
+    Args:
+        id_number: The IUB ID number typed by the user.
+        password: The password typed by the user.
+
+    Returns:
+        The user, with the role copied from the records and the
+        wrong-password count cleared.
+
+    Raises:
+        ServiceError: If the ID or password is wrong, the account is
+            locked, or the ID is no longer in the records.
+    """
+    now = timezone.now()
+    user = _get_active_user(id_number)
+    if user is None:
+        raise ServiceError(MSG_INVALID_LOGIN)
+    # Checked before the password, and nothing is counted while locked.
+    if user.is_locked(now):
+        raise ServiceError(MSG_ACCOUNT_LOCKED)
+    if user.locked_until is not None:
+        # The lock has run out, so counting wrong passwords starts again from 0.
+        user.clear_lock()
+    if not user.check_password(password):
+        _record_failed_login(user, now)
+        raise ServiceError(MSG_INVALID_LOGIN)
+    member = get_records_client().find_member(id_number)
+    if member is None:
+        raise ServiceError(MSG_ACCOUNT_NO_LONGER_ACTIVE)
+    # The records are the source of truth: a changed role takes effect now.
+    user.role = member.role
+    user.clear_lock()
+    user.save()
+    return user
+
+
+def request_password_reset(id_number: str) -> None:
+    """Send a password-reset OTP to a registered member (FR-04).
+
+    Unknown, pending and former members get no OTP and no error, so the
+    page shows the same message for them as for a registered member.
+    Also used by the "Request a new OTP" button, which cancels the
+    earlier OTP.
+
+    Args:
+        id_number: The IUB ID number typed by the user.
+
+    Raises:
+        ServiceError: If the account is locked or too many OTPs were
+            requested.
+    """
+    user = _get_active_user(id_number)
+    if user is None:
+        return
+    try:
+        _, destination = _find_member_and_destination(id_number)
+    except ServiceError:
+        # Left the university or no contact details: same answer as unknown.
+        return
+    if user.is_locked(timezone.now()):
+        raise ServiceError(MSG_ACCOUNT_LOCKED)
+    with transaction.atomic():
+        _issue_otp(user, destination, OTP_PURPOSE_PASSWORD_RESET)
+
+
+def reset_password(id_number: str, code: str, new_password: str) -> None:
+    """Change the password if the password-reset OTP is correct (FR-04).
+
+    The password length is checked first, so a too-short password does
+    not use up one of the three OTP attempts. Changing the password does
+    not unlock a locked account.
+
+    Args:
+        id_number: The IUB ID number the reset was requested for.
+        code: The OTP typed by the user.
+        new_password: The new password in plain text.
+
+    Raises:
+        ServiceError: If the new password is too short, or the OTP is
+            wrong, expired or no longer valid.
+    """
+    _check_password_length(new_password)
+    user = _get_active_user(id_number)
+    if user is None:
+        # Same message as a wrong OTP, so the page does not reveal the ID.
+        raise ServiceError(MSG_OTP_INCORRECT)
+    otp = _check_otp(user, OTP_PURPOSE_PASSWORD_RESET, code)
+    # One transaction, so the OTP is never used up without the password changing.
+    with transaction.atomic():
+        otp.status = OTP_USED
+        otp.save()
+        user.set_password(new_password)
+        user.save()
+
+
 # --- Helpers: users and university records ---
 
 
@@ -169,7 +283,7 @@ def _find_member_and_destination(id_number: str) -> tuple[UniversityMember, str]
 def _raise_if_registered(user: User) -> None:
     """Reject a user whose account is no longer waiting for activation.
 
-    Active and locked accounts have both finished registration.
+    Active accounts, locked or not, have finished registration.
 
     Args:
         user: The user to check.
@@ -220,6 +334,36 @@ def _get_pending_user(id_number: str) -> User:
     return user
 
 
+def _get_active_user(id_number: str) -> User | None:
+    """Return the activated user for this ID, or None.
+
+    Args:
+        id_number: The IUB ID number.
+
+    Returns:
+        The active user, or None if the ID is unknown or still pending.
+    """
+    return User.objects.filter(
+        username=id_number, account_status=ACCOUNT_ACTIVE
+    ).first()
+
+
+def _record_failed_login(user: User, now: datetime) -> None:
+    """Count a wrong password and lock the account on the last allowed try.
+
+    Saved straight away, so the count and the lock stay stored after the
+    caller raises its error.
+
+    Args:
+        user: The user who typed a wrong password.
+        now: The current time.
+    """
+    user.failed_login_attempts += 1
+    if user.failed_login_attempts >= LOGIN_MAX_FAILED_ATTEMPTS:
+        user.locked_until = now + timedelta(minutes=ACCOUNT_LOCK_MINUTES)
+    user.save()
+
+
 # --- Helpers: OTPs (written so FR-04 password reset can reuse them) ---
 
 
@@ -232,20 +376,25 @@ def _generate_otp_code() -> str:
     return "".join(secrets.choice(string.digits) for _ in range(OTP_LENGTH))
 
 
-def _check_request_limit(user: User, now: datetime) -> None:
+def _check_request_limit(user: User, purpose: str, now: datetime) -> None:
     """Reject the request if the user asked for too many OTPs recently.
 
-    Every OTP row is one request, whatever its purpose or status.
+    Every OTP row of this purpose is one request, whatever its status.
+    Each purpose has its own limit, so registration OTPs do not use up
+    the password-reset limit.
 
     Args:
         user: The user asking for an OTP.
+        purpose: One of the OTP purpose constants.
         now: The current time.
 
     Raises:
         ServiceError: If the limit for the time window is reached.
     """
     window_start = now - timedelta(minutes=OTP_REQUEST_WINDOW_MINUTES)
-    recent_requests = Otp.objects.filter(user=user, created_at__gt=window_start)
+    recent_requests = Otp.objects.filter(
+        user=user, purpose=purpose, created_at__gt=window_start
+    )
     if recent_requests.count() >= OTP_REQUEST_LIMIT:
         raise ServiceError(MSG_TOO_MANY_REQUESTS)
 
@@ -265,7 +414,7 @@ def _issue_otp(user: User, destination: str, purpose: str) -> None:
         ServiceError: If too many OTPs were requested.
     """
     now = timezone.now()
-    _check_request_limit(user, now)
+    _check_request_limit(user, purpose, now)
     # Only one OTP may be valid at a time, so the earlier one is cancelled.
     Otp.objects.filter(user=user, status=OTP_VALID).update(status=OTP_INVALID)
     code = _generate_otp_code()

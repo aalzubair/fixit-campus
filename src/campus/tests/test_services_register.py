@@ -10,7 +10,7 @@ from django.contrib.auth.hashers import check_password
 
 from campus.constants import (
     ACCOUNT_ACTIVE,
-    ACCOUNT_LOCKED,
+    ACCOUNT_LOCK_MINUTES,
     ACCOUNT_PENDING_ACTIVATION,
     MSG_ALREADY_REGISTERED,
     MSG_ID_NOT_FOUND,
@@ -41,6 +41,7 @@ from campus.tests.base import (
     NEW_PASSWORD,
     NO_CONTACT_ID,
     STAFF_MOBILE,
+    START_TIME,
     STUDENT_EMAIL,
     STUDENT_ID,
     TEST_MEMBERS,
@@ -123,7 +124,7 @@ class RegisterUserTests(RegistrationTestCase):
     def test_locked_id_is_rejected_as_already_registered(self) -> None:
         """A locked account has finished registration too."""
         user = self.make_active_user(STUDENT_ID)
-        user.account_status = ACCOUNT_LOCKED
+        user.locked_until = START_TIME + timedelta(minutes=ACCOUNT_LOCK_MINUTES)
         user.save()
         with self.assertRaisesMessage(ServiceError, MSG_ALREADY_REGISTERED):
             register_user(STUDENT_ID, NEW_PASSWORD)

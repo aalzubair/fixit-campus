@@ -1,0 +1,10 @@
+<!-- Home page (FR-02): a placeholder heading and text for the logged-in user's role. Real home pages come with later features. -->
+{% extends "campus/base.html" %}
+
+{% block title %}Home | FixIt Campus{% endblock %}
+
+{% block content %}
+  <p class="text-primary small mb-1">{{ user.get_role_display }}</p>
+  <h2 class="h4 fw-bold">{{ heading }}</h2>
+  <p class="text-secondary mb-0">{{ text }}</p>
+{% endblock %}

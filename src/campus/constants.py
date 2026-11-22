@@ -7,9 +7,12 @@ User-facing messages come from three sources:
 - Copied word for word from SRS FR-01: ``MSG_ID_NOT_FOUND``,
   ``MSG_ALREADY_REGISTERED``, ``MSG_PASSWORD_TOO_SHORT``,
   ``MSG_NO_CONTACT_DETAILS`` and ``MSG_TOO_MANY_REQUESTS``.
+- Copied word for word from SRS FR-02 to FR-04: ``MSG_INVALID_LOGIN``,
+  ``MSG_ACCOUNT_LOCKED``, ``MSG_ACCOUNT_NO_LONGER_ACTIVE``,
+  ``MSG_NOT_AUTHORIZED``, ``MSG_SESSION_EXPIRED`` and ``MSG_RESET_OTP_SENT``.
 - From the UI design: ``MSG_OTP_INCORRECT`` and ``MSG_OTP_NO_LONGER_VALID``.
-- Our own wording: ``MSG_OTP_EXPIRED``, ``MSG_OTP_FORMAT`` and
-  ``MSG_NEW_OTP_SENT``.
+- Our own wording: ``MSG_OTP_EXPIRED``, ``MSG_OTP_FORMAT``,
+  ``MSG_NEW_OTP_SENT`` and ``MSG_PASSWORD_CHANGED``.
 
 The UI-design and own-wording messages have not been checked against the
 SRS Wiki yet.
@@ -31,13 +34,13 @@ ROLE_CHOICES = (
 ROLE_MAX_LENGTH = 20
 
 # --- Account statuses ---
+# "Locked" is not a status: it is derived from ``User.locked_until`` so the
+# two can never disagree (FR-02).
 ACCOUNT_PENDING_ACTIVATION = "pending_activation"
 ACCOUNT_ACTIVE = "active"
-ACCOUNT_LOCKED = "locked"
 ACCOUNT_STATUS_CHOICES = (
     (ACCOUNT_PENDING_ACTIVATION, "Pending activation"),
     (ACCOUNT_ACTIVE, "Active"),
-    (ACCOUNT_LOCKED, "Locked"),
 )
 ACCOUNT_STATUS_MAX_LENGTH = 20
 
@@ -54,7 +57,7 @@ OTP_STATUS_CHOICES = (
 )
 OTP_STATUS_MAX_LENGTH = 10
 
-# --- OTP purposes (password_reset is used later by FR-04) ---
+# --- OTP purposes ---
 OTP_PURPOSE_REGISTRATION = "registration"
 OTP_PURPOSE_PASSWORD_RESET = "password_reset"
 OTP_PURPOSE_CHOICES = (
@@ -74,19 +77,67 @@ OTP_REQUEST_LIMIT = 5
 OTP_REQUEST_WINDOW_MINUTES = 15
 PASSWORD_MIN_LENGTH = 8
 
+# --- Business rules (FR-02, FR-03) ---
+LOGIN_MAX_FAILED_ATTEMPTS = 5
+ACCOUNT_LOCK_MINUTES = 15
+SESSION_IDLE_TIMEOUT_MINUTES = 15
+
 # --- Input shape (checked by forms) ---
 ID_NUMBER_MAX_LENGTH = 20
 OTP_PATTERN = rf"^\d{{{OTP_LENGTH}}}$"
 
-# --- Presentation: session key, URL names and templates ---
+# --- Presentation: session keys, URL names and templates ---
 SESSION_REGISTER_ID_NUMBER = "register_id_number"
+SESSION_RESET_ID_NUMBER = "reset_id_number"
+SESSION_LAST_ACTIVITY = "last_activity"
 URL_NAME_REGISTER = "register"
 URL_NAME_REGISTER_VERIFY = "register_verify"
 URL_NAME_REGISTER_NEW_OTP = "register_new_otp"
 URL_NAME_REGISTER_DONE = "register_done"
+URL_NAME_LOGIN = "login"
+URL_NAME_LOGOUT = "logout"
+URL_NAME_HOME = "home"
+URL_NAME_PASSWORD_RESET = "password_reset"
+URL_NAME_PASSWORD_RESET_VERIFY = "password_reset_verify"
+URL_NAME_PASSWORD_RESET_NEW_OTP = "password_reset_new_otp"
 TEMPLATE_REGISTER = "campus/register.html"
 TEMPLATE_REGISTER_VERIFY = "campus/register_verify.html"
 TEMPLATE_REGISTER_DONE = "campus/register_done.html"
+TEMPLATE_LOGIN = "campus/login.html"
+TEMPLATE_HOME = "campus/home.html"
+TEMPLATE_PASSWORD_RESET = "campus/password_reset.html"
+TEMPLATE_PASSWORD_RESET_VERIFY = "campus/password_reset_verify.html"
+TEMPLATE_FORBIDDEN = "campus/403.html"
+
+# --- Home page placeholder for each role: (role, heading, short text) ---
+# Real home pages come with later features.
+HOME_PAGE_TEXT = (
+    (
+        ROLE_STUDENT,
+        "Student home",
+        "Here you will submit complaints and follow their progress.",
+    ),
+    (
+        ROLE_FACULTY,
+        "Faculty home",
+        "Here you will submit complaints and follow their progress.",
+    ),
+    (
+        ROLE_MAINTENANCE_STAFF,
+        "Maintenance staff home",
+        "Here you will see the complaints assigned to you.",
+    ),
+    (
+        ROLE_SUPERVISOR,
+        "Maintenance supervisor home",
+        "Here you will assign complaints and watch the work of your team.",
+    ),
+    (
+        ROLE_ADMINISTRATOR,
+        "University administration home",
+        "Here you will see reports and manage complaints.",
+    ),
+)
 
 # --- University records file (JSON keys) ---
 RECORDS_FILE_ENCODING = "utf-8"
@@ -116,3 +167,15 @@ MSG_OTP_NO_LONGER_VALID = (
 MSG_OTP_EXPIRED = "This OTP has expired. Please request a new OTP."
 MSG_OTP_FORMAT = "Enter the 6-digit OTP."
 MSG_NEW_OTP_SENT = "A new OTP has been sent. The earlier OTP no longer works."
+
+# --- User-facing messages (SRS FR-02, FR-03, FR-04) ---
+MSG_INVALID_LOGIN = "Invalid ID or password"
+MSG_ACCOUNT_LOCKED = "Your account is locked. Please try again later."
+MSG_ACCOUNT_NO_LONGER_ACTIVE = (
+    "Your account is no longer active. Please contact the university administration."
+)
+MSG_NOT_AUTHORIZED = "You are not authorized to view this page."
+MSG_SESSION_EXPIRED = "Your session has expired. Please log in again."
+MSG_RESET_OTP_SENT = "If this ID is registered, a one-time password has been sent."
+# Our own wording (not in the SRS): shown on the login page after a reset.
+MSG_PASSWORD_CHANGED = "Your password has been changed. Please log in."
