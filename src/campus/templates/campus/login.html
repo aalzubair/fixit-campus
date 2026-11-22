@@ -1,0 +1,46 @@
+<!-- Log in (FR-02): the user enters their IUB ID number and password. Also shows the session-expired (FR-03) and password-changed messages. -->
+{% extends "campus/base.html" %}
+
+{% block title %}Log in | FixIt Campus{% endblock %}
+
+{% block content %}
+  <h2 class="h4 fw-bold">Log in</h2>
+  <p class="text-secondary small">Log in with your IUB ID number and password.</p>
+
+  {% include "campus/_messages.html" %}
+
+  <form method="post" action="{% url 'login' %}" novalidate>
+    {% csrf_token %}
+
+    <div class="mb-3">
+      <label for="id_number" class="form-label fw-semibold">IUB ID number</label>
+      <input type="text" id="id_number" name="id_number"
+             class="form-control{% if form.id_number.errors %} is-invalid{% endif %}"
+             value="{{ form.id_number.value|default:'' }}"
+             placeholder="Enter your IUB ID number" autocomplete="username">
+      <div class="form-text">This is the ID issued by the university, not your email address.</div>
+      {% include "campus/_errors.html" with errors=form.id_number.errors %}
+    </div>
+
+    <div class="mb-1">
+      <label for="password" class="form-label fw-semibold">Password</label>
+      <input type="password" id="password" name="password"
+             class="form-control{% if form.password.errors %} is-invalid{% endif %}"
+             placeholder="Enter your password" autocomplete="current-password">
+      {% include "campus/_errors.html" with errors=form.password.errors %}
+    </div>
+    <div class="text-end mb-3">
+      <a href="{% url 'password_reset' %}" class="small">Forgot password?</a>
+    </div>
+
+    <div class="mb-3">
+      {% include "campus/_errors.html" with errors=form.non_field_errors %}
+    </div>
+
+    <button type="submit" class="btn btn-primary w-100">Log in</button>
+  </form>
+
+  <p class="text-secondary text-center mt-3 mb-0">
+    New here? <a href="{% url 'register' %}">Register</a>
+  </p>
+{% endblock %}

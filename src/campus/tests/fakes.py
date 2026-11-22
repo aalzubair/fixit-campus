@@ -1,5 +1,7 @@
 """Fake outside systems for tests: nothing is printed and no file is read."""
 
+from dataclasses import replace
+
 from campus.delivery import OtpSender
 from campus.records import RecordsClient, UniversityMember
 
@@ -56,8 +58,8 @@ class FailingOtpSender(FakeOtpSender):
         raise ConnectionError("delivery service unavailable")
 
 
-class FakeRecordsClient(RecordsClient):  # pylint: disable=too-few-public-methods
-    """University records kept in memory."""
+class FakeRecordsClient(RecordsClient):
+    """University records kept in memory. Tests may change them (FR-02, FR-04)."""
 
     def __init__(self, members: tuple[UniversityMember, ...] = ()) -> None:
         """Store the members by IUB ID number.
@@ -77,3 +79,20 @@ class FakeRecordsClient(RecordsClient):  # pylint: disable=too-few-public-method
             The matching member, or None.
         """
         return self._members.get(id_number)
+
+    def remove_member(self, id_number: str) -> None:
+        """Remove a person, as when they leave the university.
+
+        Args:
+            id_number: The IUB ID number to remove.
+        """
+        del self._members[id_number]
+
+    def change_member(self, id_number: str, **changes: str | None) -> None:
+        """Change details of a person, for example a new role.
+
+        Args:
+            id_number: The IUB ID number of the person.
+            changes: New values for ``role``, ``email`` or ``mobile``.
+        """
+        self._members[id_number] = replace(self._members[id_number], **changes)

@@ -5,8 +5,9 @@
 
 {% block content %}
   <h2 class="h4 fw-bold">Account activated</h2>
-  <p class="text-secondary mb-0">
+  <p class="text-secondary">
     Your account is activated with the role stored in the university records.
     You can now log in with your IUB ID number and password.
   </p>
+  <a href="{% url 'login' %}" class="btn btn-primary w-100">Log in</a>
 {% endblock %}

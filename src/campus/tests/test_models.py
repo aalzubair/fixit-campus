@@ -7,6 +7,7 @@ from django.test import SimpleTestCase
 from campus.constants import (
     ACCOUNT_ACTIVE,
     ACCOUNT_PENDING_ACTIVATION,
+    LOGIN_MAX_FAILED_ATTEMPTS,
     OTP_PURPOSE_REGISTRATION,
     OTP_VALID,
 )
@@ -35,6 +36,36 @@ class UserHelperTests(SimpleTestCase):
     def test_str_is_id_number(self) -> None:
         """A user is shown by IUB ID number."""
         self.assertEqual(str(User(username=STUDENT_ID)), STUDENT_ID)
+
+
+class UserLockHelperTests(SimpleTestCase):
+    """User.is_locked and User.clear_lock."""
+
+    def setUp(self) -> None:
+        """Make an unsaved user locked until START_TIME."""
+        self.user = User(
+            username=STUDENT_ID,
+            failed_login_attempts=LOGIN_MAX_FAILED_ATTEMPTS,
+            locked_until=START_TIME,
+        )
+
+    def test_new_user_is_not_locked(self) -> None:
+        """No lock time means not locked."""
+        self.assertFalse(User(username=STUDENT_ID).is_locked(START_TIME))
+
+    def test_locked_before_lock_end(self) -> None:
+        """Boundary: one second before the end the account is locked."""
+        self.assertTrue(self.user.is_locked(START_TIME - timedelta(seconds=1)))
+
+    def test_not_locked_at_exact_lock_end(self) -> None:
+        """Boundary: strictly later than now, so at the end time it is unlocked."""
+        self.assertFalse(self.user.is_locked(START_TIME))
+
+    def test_clear_lock_resets_count_and_time(self) -> None:
+        """clear_lock starts counting from 0 and removes the lock time."""
+        self.user.clear_lock()
+        self.assertEqual(self.user.failed_login_attempts, 0)
+        self.assertIsNone(self.user.locked_until)
 
 
 class OtpHelperTests(SimpleTestCase):

@@ -35,6 +35,10 @@ class User(AbstractUser):
         choices=ACCOUNT_STATUS_CHOICES,
         default=ACCOUNT_PENDING_ACTIVATION,
     )
+    # Wrong passwords in a row since the last successful login (FR-02).
+    failed_login_attempts = models.PositiveSmallIntegerField(default=0)
+    # The account is locked while this time is in the future (FR-02).
+    locked_until = models.DateTimeField(null=True, blank=True)
 
     def __str__(self) -> str:
         """Return the IUB ID number.
@@ -57,6 +61,22 @@ class User(AbstractUser):
         """Set the account to active so the user can log in (does not save)."""
         self.account_status = ACCOUNT_ACTIVE
         self.is_active = True
+
+    def is_locked(self, now: datetime) -> bool:
+        """Tell whether the account is locked at the given time.
+
+        Args:
+            now: The current time.
+
+        Returns:
+            True if ``locked_until`` is set and later than ``now``.
+        """
+        return self.locked_until is not None and self.locked_until > now
+
+    def clear_lock(self) -> None:
+        """Remove the lock and start counting wrong passwords from 0 (does not save)."""
+        self.failed_login_attempts = 0
+        self.locked_until = None
 
 
 class Otp(models.Model):

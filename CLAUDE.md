@@ -20,7 +20,7 @@ src/
   fixit_campus/            Django project: settings and root urls only
   campus/                  the ONE Django app: all feature code
     constants.py  urls.py  views.py  forms.py  services.py
-    models.py  records.py  delivery.py
+    models.py  records.py  delivery.py  middleware.py
     templates/campus/  tests/
 ```
 
@@ -34,7 +34,9 @@ Presentation layer. Imports go DOWNWARDS ONLY. Never upwards, never skip a layer
 
 | File | May import | Must NOT import |
 |---|---|---|
-| views.py, urls.py | forms, services, constants | models, delivery, records |
+| views.py | forms, services, constants | models, delivery, records |
+| urls.py | views, constants | forms, services, models, delivery, records |
+| middleware.py | constants | views, forms, services, models, delivery, records |
 | forms.py | constants | models, delivery, records, services, views |
 | services.py | models, delivery, records, constants | views, forms |
 | models.py | constants | services, views, forms, delivery, records |

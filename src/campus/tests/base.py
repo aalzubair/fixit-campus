@@ -1,4 +1,4 @@
-"""Shared test setup for FR-01: fake outside systems, a fixed clock, fast hashing."""
+"""Shared test setup for FR-01 to FR-04: fakes, a fixed clock, fast hashing."""
 
 from datetime import UTC, datetime, timedelta
 from unittest import mock
@@ -6,6 +6,7 @@ from unittest import mock
 from django.test import TestCase, override_settings
 
 from campus.constants import (
+    LOGIN_MAX_FAILED_ATTEMPTS,
     OTP_LENGTH,
     ROLE_ADMINISTRATOR,
     ROLE_FACULTY,
@@ -15,7 +16,12 @@ from campus.constants import (
 )
 from campus.models import User
 from campus.records import UniversityMember
-from campus.services import register_user, verify_registration_otp
+from campus.services import (
+    ServiceError,
+    log_in_user,
+    register_user,
+    verify_registration_otp,
+)
 from campus.tests.fakes import FakeOtpSender, FakeRecordsClient
 
 # MD5 is unsafe for real passwords but makes the test suite fast.
@@ -34,6 +40,7 @@ STAFF_MOBILE = "+8800000000003"
 
 GOOD_PASSWORD = "first-pass-1"
 NEW_PASSWORD = "second-pass-2"
+WRONG_PASSWORD = "wrong-pass-9"
 
 TEST_MEMBERS = (
     UniversityMember(STUDENT_ID, ROLE_STUDENT, STUDENT_EMAIL, "+8800000000001"),
@@ -53,11 +60,10 @@ class RegistrationTestCase(TestCase):
         """Replace the outside systems and the clock for each test."""
         super().setUp()
         self.sender = FakeOtpSender()
+        self.records = FakeRecordsClient(TEST_MEMBERS)
         self.clock = self.start_patch("django.utils.timezone.now", START_TIME)
         self.start_patch("campus.services.get_otp_sender", self.sender)
-        self.start_patch(
-            "campus.services.get_records_client", FakeRecordsClient(TEST_MEMBERS)
-        )
+        self.start_patch("campus.services.get_records_client", self.records)
 
     def start_patch(self, target: str, return_value: object) -> mock.MagicMock:
         """Patch a function for this test only.
@@ -102,3 +108,18 @@ class RegistrationTestCase(TestCase):
         register_user(id_number, GOOD_PASSWORD)
         verify_registration_otp(id_number, self.sender.last_code)
         return User.objects.get(username=id_number)
+
+    def type_wrong_passwords(
+        self, id_number: str, times: int = LOGIN_MAX_FAILED_ATTEMPTS
+    ) -> None:
+        """Try to log in with a wrong password several times.
+
+        With the default number of tries this locks the account.
+
+        Args:
+            id_number: The IUB ID number to log in with.
+            times: How many wrong passwords to type.
+        """
+        for _ in range(times):
+            with self.assertRaises(ServiceError):
+                log_in_user(id_number, WRONG_PASSWORD)

@@ -12,6 +12,8 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 
+from campus.constants import URL_NAME_LOGIN
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -47,6 +49,8 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    # After session, authentication and messages: it uses all three.
+    "campus.middleware.IdleTimeoutMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
@@ -122,6 +126,9 @@ STATIC_URL = "static/"
 
 # Must be set before the first migration; the IUB ID number is the username.
 AUTH_USER_MODEL = "campus.User"
+
+# login_required sends visitors who are not logged in to this URL name.
+LOGIN_URL = URL_NAME_LOGIN
 
 # Outside systems, chosen by dotted class path so tests and production can swap them.
 FIXIT_OTP_SENDER = "campus.delivery.ConsoleOtpSender"
