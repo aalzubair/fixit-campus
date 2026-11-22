@@ -1,0 +1,16 @@
+[tool.black]
+line-length = 88
+extend-exclude = '/migrations/'
+
+[tool.pylint.main]
+load-plugins = ["pylint_django"]
+django-settings-module = "fixit_campus.settings"
+init-hook = "import sys; sys.path.append('src')"
+ignore = ["migrations"]
+
+[tool.pylint.format]
+max-line-length = 88
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["*/migrations/*", "src/manage.py"]

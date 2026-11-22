@@ -1,0 +1,1 @@
+Approved with one change to question 3: set is_active=False while the account is pending_activation and is_active=True when it is activated, so that Django's authentication rejects pending accounts by default. Also, in tests use a fast password hasher through override_settings so the test suite stays quick. Start Stage 1 only and stop when it is done.
