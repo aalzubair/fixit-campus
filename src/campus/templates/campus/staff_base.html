@@ -1,0 +1,6 @@
+<!-- Layout for the maintenance staff and supervisor pages (F5): the same navbar as the complaint pages, with the staff links instead of the complainant links. -->
+{% extends "campus/app_base.html" %}
+
+{% block nav_links %}
+  <a class="nav-link active fw-semibold text-primary" href="{% url 'staff_complaints' %}">Complaints</a>
+{% endblock %}
