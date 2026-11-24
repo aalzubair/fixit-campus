@@ -21,6 +21,7 @@ from campus.constants import (
     ACCOUNT_LOCK_MINUTES,
     ACCOUNT_PENDING_ACTIVATION,
     LOGIN_MAX_FAILED_ATTEMPTS,
+    MEMBER_NAME_MAX_LENGTH,
     MSG_ACCOUNT_LOCKED,
     MSG_ACCOUNT_NO_LONGER_ACTIVE,
     MSG_ALREADY_REGISTERED,
@@ -75,6 +76,7 @@ def register_user(id_number: str, password: str) -> None:
 
     A new user is created as pending activation. If the user is already
     pending, the earlier password is replaced and a new OTP is sent.
+    The name and role are copied from the university records.
 
     Args:
         id_number: The IUB ID number typed by the user.
@@ -90,7 +92,7 @@ def register_user(id_number: str, password: str) -> None:
     # One transaction, so a rejected OTP request does not keep the new password.
     with transaction.atomic():
         user = _get_or_build_unregistered_user(id_number)
-        user.role = member.role
+        _copy_records_details(user, member)
         user.set_password(password)
         user.mark_pending()
         user.save()
@@ -151,8 +153,8 @@ def log_in_user(id_number: str, password: str) -> User:
         password: The password typed by the user.
 
     Returns:
-        The user, with the role copied from the records and the
-        wrong-password count cleared.
+        The user, with the name and role copied from the records and
+        the wrong-password count cleared.
 
     Raises:
         ServiceError: If the ID or password is wrong, the account is
@@ -174,8 +176,8 @@ def log_in_user(id_number: str, password: str) -> User:
     member = get_records_client().find_member(id_number)
     if member is None:
         raise ServiceError(MSG_ACCOUNT_NO_LONGER_ACTIVE)
-    # The records are the source of truth: a changed role takes effect now.
-    user.role = member.role
+    # The records are the source of truth: a changed name or role takes effect now.
+    _copy_records_details(user, member)
     user.clear_lock()
     user.save()
     return user
@@ -278,6 +280,22 @@ def _find_member_and_destination(id_number: str) -> tuple[UniversityMember, str]
     if not destination:
         raise ServiceError(MSG_NO_CONTACT_DETAILS)
     return member, destination
+
+
+def _copy_records_details(user: User, member: UniversityMember) -> None:
+    """Copy the name and role from the university records (does not save).
+
+    The full name goes into Django's existing ``first_name`` field and
+    ``last_name`` stays empty, so ``get_full_name()`` returns it without a
+    new model field or migration. A name longer than the field is cut,
+    because a long name must not stop a member from registering or logging in.
+
+    Args:
+        user: The user to update.
+        member: The same person in the university records.
+    """
+    user.first_name = member.name[:MEMBER_NAME_MAX_LENGTH]
+    user.role = member.role
 
 
 def _raise_if_registered(user: User) -> None:

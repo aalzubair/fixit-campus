@@ -18,6 +18,7 @@ from campus.constants import (
     RECORD_KEY_EMAIL,
     RECORD_KEY_ID_NUMBER,
     RECORD_KEY_MOBILE,
+    RECORD_KEY_NAME,
     RECORD_KEY_ROLE,
     RECORDS_FILE_ENCODING,
 )
@@ -29,12 +30,14 @@ class UniversityMember:
 
     Attributes:
         id_number: The IUB ID number.
+        name: The full name, as one string.
         role: One of the role constants, for example ``"student"``.
         email: The registered email, or None if there is none.
         mobile: The registered mobile number, or None if there is none.
     """
 
     id_number: str
+    name: str
     role: str
     email: str | None
     mobile: str | None
@@ -79,6 +82,7 @@ class JsonRecordsClient(RecordsClient):  # pylint: disable=too-few-public-method
         Raises:
             OSError: If the records file cannot be read.
             json.JSONDecodeError: If the records file is not valid JSON.
+            KeyError: If the matching person has no name or no role.
         """
         with self._file_path.open(encoding=RECORDS_FILE_ENCODING) as records_file:
             people = json.load(records_file)
@@ -86,6 +90,7 @@ class JsonRecordsClient(RecordsClient):  # pylint: disable=too-few-public-method
             if person[RECORD_KEY_ID_NUMBER] == id_number:
                 return UniversityMember(
                     id_number=person[RECORD_KEY_ID_NUMBER],
+                    name=person[RECORD_KEY_NAME],
                     role=person[RECORD_KEY_ROLE],
                     email=person.get(RECORD_KEY_EMAIL),
                     mobile=person.get(RECORD_KEY_MOBILE),

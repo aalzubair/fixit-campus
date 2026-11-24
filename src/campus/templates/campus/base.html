@@ -16,7 +16,8 @@
       <a class="navbar-brand text-primary fw-bold" href="{% if user.is_authenticated %}{% url 'home' %}{% else %}{% url 'login' %}{% endif %}">FixIt Campus</a>
       <div class="d-flex align-items-center gap-2">
         {% if user.is_authenticated %}
-          <span class="small text-secondary">{{ user.username }} · {{ user.get_role_display }}</span>
+          {# Accounts saved before names were copied from the records have no name until their next login, so the ID number is shown instead. #}
+          <span class="small text-secondary">{{ user.get_full_name|default:user.username }} · {{ user.get_role_display }}</span>
           <form method="post" action="{% url 'logout' %}" class="m-0">
             {% csrf_token %}
             <button type="submit" class="btn btn-sm btn-outline-primary">Log out</button>

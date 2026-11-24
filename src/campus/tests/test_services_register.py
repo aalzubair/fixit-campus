@@ -12,6 +12,7 @@ from campus.constants import (
     ACCOUNT_ACTIVE,
     ACCOUNT_LOCK_MINUTES,
     ACCOUNT_PENDING_ACTIVATION,
+    MEMBER_NAME_MAX_LENGTH,
     MSG_ALREADY_REGISTERED,
     MSG_ID_NOT_FOUND,
     MSG_NO_CONTACT_DETAILS,
@@ -39,11 +40,13 @@ from campus.tests.base import (
     GOOD_PASSWORD,
     MOBILE_ONLY_ID,
     NEW_PASSWORD,
+    NEW_STUDENT_NAME,
     NO_CONTACT_ID,
     STAFF_MOBILE,
     START_TIME,
     STUDENT_EMAIL,
     STUDENT_ID,
+    STUDENT_NAME,
     TEST_MEMBERS,
     UNKNOWN_ID,
     RegistrationTestCase,
@@ -182,6 +185,47 @@ class RegisterUserTests(RegistrationTestCase):
         error = ServiceError(MSG_ID_NOT_FOUND)
         self.assertEqual(error.message, MSG_ID_NOT_FOUND)
         self.assertEqual(str(error), MSG_ID_NOT_FOUND)
+
+
+class RegisterNameTests(RegistrationTestCase):
+    """register_user copies the name from the records into first_name."""
+
+    def stored_name(self) -> str:
+        """Read the student's stored first_name fresh from the database.
+
+        Returns:
+            The stored first_name of the student.
+        """
+        return User.objects.get(username=STUDENT_ID).first_name
+
+    def test_name_from_records_is_stored_at_registration(self) -> None:
+        """The full name is copied into first_name and last_name stays empty."""
+        register_user(STUDENT_ID, GOOD_PASSWORD)
+        user = User.objects.get(username=STUDENT_ID)
+        self.assertEqual(user.first_name, STUDENT_NAME)
+        self.assertEqual(user.last_name, "")
+        self.assertEqual(user.get_full_name(), STUDENT_NAME)
+
+    def test_registering_again_while_pending_takes_new_name(self) -> None:
+        """A name changed in the records replaces the stored pending name."""
+        register_user(STUDENT_ID, GOOD_PASSWORD)
+        self.records.change_member(STUDENT_ID, name=NEW_STUDENT_NAME)
+        register_user(STUDENT_ID, NEW_PASSWORD)
+        self.assertEqual(self.stored_name(), NEW_STUDENT_NAME)
+
+    def test_name_at_length_limit_is_stored_whole(self) -> None:
+        """Boundary: a name of exactly the maximum length is not cut."""
+        long_name = "N" * MEMBER_NAME_MAX_LENGTH
+        self.records.change_member(STUDENT_ID, name=long_name)
+        register_user(STUDENT_ID, GOOD_PASSWORD)
+        self.assertEqual(self.stored_name(), long_name)
+
+    def test_name_over_length_limit_is_cut(self) -> None:
+        """Boundary: one character too many is cut, and registration succeeds."""
+        full_length_name = "N" * MEMBER_NAME_MAX_LENGTH
+        self.records.change_member(STUDENT_ID, name=full_length_name + "X")
+        register_user(STUDENT_ID, GOOD_PASSWORD)
+        self.assertEqual(self.stored_name(), full_length_name)
 
 
 class VerifyOtpTests(RegistrationTestCase):

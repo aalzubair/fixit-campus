@@ -19,8 +19,10 @@ from campus.services import ServiceError, log_in_user, register_user
 from campus.tests.base import (
     FACULTY_ID,
     GOOD_PASSWORD,
+    NEW_STUDENT_NAME,
     START_TIME,
     STUDENT_ID,
+    STUDENT_NAME,
     UNKNOWN_ID,
     WRONG_PASSWORD,
     RegistrationTestCase,
@@ -217,3 +219,16 @@ class RecordsCheckAtLoginTests(LoginTestCase):
         self.records.change_member(STUDENT_ID, role=ROLE_FACULTY)
         self.assert_login_rejected(WRONG_PASSWORD, MSG_INVALID_LOGIN)
         self.assertEqual(stored_user().role, ROLE_STUDENT)
+
+    def test_changed_name_in_records_is_stored_at_login(self) -> None:
+        """The name from the records replaces the stored name, like the role."""
+        self.records.change_member(STUDENT_ID, name=NEW_STUDENT_NAME)
+        user = log_in_user(STUDENT_ID, GOOD_PASSWORD)
+        self.assertEqual(user.get_full_name(), NEW_STUDENT_NAME)
+        self.assertEqual(stored_user().get_full_name(), NEW_STUDENT_NAME)
+
+    def test_name_is_not_changed_by_wrong_password(self) -> None:
+        """The stored name changes only on a successful login."""
+        self.records.change_member(STUDENT_ID, name=NEW_STUDENT_NAME)
+        self.assert_login_rejected(WRONG_PASSWORD, MSG_INVALID_LOGIN)
+        self.assertEqual(stored_user().get_full_name(), STUDENT_NAME)

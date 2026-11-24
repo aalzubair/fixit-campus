@@ -37,18 +37,30 @@ NO_CONTACT_ID = "1000006"
 UNKNOWN_ID = "9999999"
 STUDENT_EMAIL = "student@test.example"
 STAFF_MOBILE = "+8800000000003"
+STUDENT_NAME = "Test Student"
+NEW_STUDENT_NAME = "Test Student Renamed"
 
 GOOD_PASSWORD = "first-pass-1"
 NEW_PASSWORD = "second-pass-2"
 WRONG_PASSWORD = "wrong-pass-9"
 
 TEST_MEMBERS = (
-    UniversityMember(STUDENT_ID, ROLE_STUDENT, STUDENT_EMAIL, "+8800000000001"),
-    UniversityMember(FACULTY_ID, ROLE_FACULTY, "faculty@test.example", None),
-    UniversityMember(MOBILE_ONLY_ID, ROLE_MAINTENANCE_STAFF, None, STAFF_MOBILE),
-    UniversityMember(SUPERVISOR_ID, ROLE_SUPERVISOR, "boss@test.example", None),
-    UniversityMember(ADMINISTRATOR_ID, ROLE_ADMINISTRATOR, "admin@test.example", None),
-    UniversityMember(NO_CONTACT_ID, ROLE_STUDENT, None, None),
+    UniversityMember(
+        STUDENT_ID, STUDENT_NAME, ROLE_STUDENT, STUDENT_EMAIL, "+8800000000001"
+    ),
+    UniversityMember(
+        FACULTY_ID, "Test Faculty", ROLE_FACULTY, "faculty@test.example", None
+    ),
+    UniversityMember(
+        MOBILE_ONLY_ID, "Test Staff", ROLE_MAINTENANCE_STAFF, None, STAFF_MOBILE
+    ),
+    UniversityMember(
+        SUPERVISOR_ID, "Test Supervisor", ROLE_SUPERVISOR, "boss@test.example", None
+    ),
+    UniversityMember(
+        ADMINISTRATOR_ID, "Test Admin", ROLE_ADMINISTRATOR, "admin@test.example", None
+    ),
+    UniversityMember(NO_CONTACT_ID, "Test No Contact", ROLE_STUDENT, None, None),
 )
 
 
