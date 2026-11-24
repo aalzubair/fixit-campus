@@ -3,7 +3,9 @@
 This module holds the rules for FR-01 (register with OTP verification),
 FR-02 (log in, account lock, IUB records check), FR-04 (reset password),
 FR-06 to FR-08 (submit a complaint, find similar ones, follow), FR-09 (track
-complaints), FR-10 (reopen) and FR-21 (browse complaints). FR-03 (log out,
+complaints), FR-10 (reopen), FR-21 (browse complaints) and the staff
+actions FR-11 to FR-14 and FR-20 (filter, accept, resolve, location history,
+reject). FR-03 (log out,
 idle timeout) only changes the session, so it lives in the Presentation layer.
 This module never sees the request, the session or HTML.
 Outside systems are used only through ``records.py`` (university records)
@@ -30,20 +32,31 @@ from campus.constants import (
     BROWSABLE_STATUSES,
     COMPLAINT_ID_NUMBER_WIDTH,
     COMPLAINT_ID_PREFIX_FORMAT,
+    COMPLAINT_IN_PROGRESS,
     COMPLAINT_OPEN,
+    COMPLAINT_REJECTED,
     COMPLAINT_RESOLVED,
     LOGIN_MAX_FAILED_ATTEMPTS,
     MEMBER_NAME_MAX_LENGTH,
+    MSG_ACCEPT_FIRST,
     MSG_ACCOUNT_LOCKED,
     MSG_ACCOUNT_NO_LONGER_ACTIVE,
     MSG_ALREADY_REGISTERED,
     MSG_CANNOT_FOLLOW_OWN,
+    MSG_COMPLAINT_ALREADY_ASSIGNED,
     MSG_COMPLAINT_NOT_ALLOWED,
+    MSG_COMPLAINT_NOT_FOUND,
     MSG_ID_NOT_FOUND,
     MSG_INVALID_LOGIN,
     MSG_NO_CONTACT_DETAILS,
+    MSG_ONLY_ACTIVE_CAN_REJECT,
+    MSG_ONLY_ASSIGNED_CAN_REJECT,
+    MSG_ONLY_ASSIGNED_CAN_RESOLVE,
     MSG_ONLY_BROWSABLE_CAN_FOLLOW,
+    MSG_ONLY_IN_PROGRESS_CAN_RESOLVE,
+    MSG_ONLY_OPEN_CAN_ACCEPT,
     MSG_ONLY_RESOLVED_CAN_REOPEN,
+    MSG_ONLY_STAFF_CAN_REJECT,
     MSG_OTP_EXPIRED,
     MSG_OTP_INCORRECT,
     MSG_OTP_NO_LONGER_VALID,
@@ -62,7 +75,11 @@ from campus.constants import (
     OTP_USED,
     OTP_VALID,
     PASSWORD_MIN_LENGTH,
+    REJECTABLE_STATUSES,
     REOPEN_WINDOW_DAYS,
+    ROLE_MAINTENANCE_STAFF,
+    ROLE_SUPERVISOR,
+    STAFF_ROLES,
 )
 from campus.delivery import get_otp_sender
 from campus.models import Complaint, Follow, Otp, User
@@ -179,6 +196,46 @@ class ComplaintDetail:
     can_reopen: bool
     reopen_expired: bool
     reopen_deadline: datetime | None
+
+
+@dataclass(frozen=True)
+class StaffFilters:
+    """The filters of the staff complaint list (FR-11); empty means "all".
+
+    Attributes:
+        building: A building, or an empty string for every building.
+        category: A category value, or an empty string for every category.
+        status: A status value, or an empty string for every status.
+        safety_hazard_only: True to show only Safety Hazard complaints.
+    """
+
+    building: str = ""
+    category: str = ""
+    status: str = ""
+    safety_hazard_only: bool = False
+
+
+@dataclass(frozen=True)
+class StaffComplaintDetail:
+    """A complaint as staff see it, with its location history (FR-12 to FR-14).
+
+    The ``can_*`` flags depend only on the status and the role, so a staff
+    member still sees Resolve on a complaint of a colleague. Pressing it shows
+    the SRS message that explains why it was refused (FR-13, FR-20).
+
+    Attributes:
+        complaint: The complaint, with every detail.
+        location_history: Earlier complaints at the same place, newest first.
+        can_accept: True if Accept should be offered (Open, staff member).
+        can_resolve: True if Mark as Resolved should be offered (In Progress).
+        can_reject: True if Reject should be offered (Open or In Progress).
+    """
+
+    complaint: Complaint
+    location_history: list[Complaint]
+    can_accept: bool
+    can_resolve: bool
+    can_reject: bool
 
 
 # --- Public service functions (called by views) ---
@@ -564,6 +621,170 @@ def reopen_complaint(user: User, complaint_id: str, reason: str) -> None:
         complaint.save()
 
 
+# --- Staff actions (F5: FR-11 to FR-14, FR-20) ---
+
+
+def list_staff_complaints(filters: StaffFilters) -> list[Complaint]:
+    """List every complaint for staff, narrowed by filters (FR-11).
+
+    Args:
+        filters: Building, category, status and the Safety Hazard box.
+
+    Returns:
+        The matching complaints, Safety Hazard first, then newest first.
+    """
+    complaints = Complaint.objects.select_related("assigned_to")
+    if filters.building:
+        complaints = complaints.filter(building=filters.building)
+    if filters.category:
+        complaints = complaints.filter(category=filters.category)
+    if filters.status:
+        complaints = complaints.filter(status=filters.status)
+    if filters.safety_hazard_only:
+        complaints = complaints.filter(is_safety_hazard=True)
+    return list(complaints.order_by("-is_safety_hazard", "-created_at", "-id"))
+
+
+def get_staff_complaint_detail(user: User, complaint_id: str) -> StaffComplaintDetail:
+    """Open one complaint for staff, with its location history (FR-14).
+
+    Args:
+        user: The logged-in staff member or supervisor.
+        complaint_id: The complaint ID, for example ``CMP-2026-00001``.
+
+    Returns:
+        The complaint, the earlier complaints at its place and which actions
+        to offer.
+
+    Raises:
+        ServiceError: If there is no complaint with this ID.
+    """
+    complaint = (
+        Complaint.objects.select_related("assigned_to", "rejected_by")
+        .filter(complaint_id=complaint_id)
+        .first()
+    )
+    if complaint is None:
+        raise ServiceError(MSG_COMPLAINT_NOT_FOUND)
+    # FR-14 location rule: building, floor and room or area must all match.
+    history = (
+        Complaint.objects.filter(
+            building=complaint.building,
+            floor=complaint.floor,
+            room_or_area=complaint.room_or_area,
+            created_at__lte=complaint.created_at,
+        )
+        .exclude(pk=complaint.pk)
+        .order_by("-created_at", "-id")
+    )
+    return StaffComplaintDetail(
+        complaint=complaint,
+        location_history=list(history),
+        can_accept=complaint.status == COMPLAINT_OPEN
+        and user.role == ROLE_MAINTENANCE_STAFF,
+        can_resolve=complaint.status == COMPLAINT_IN_PROGRESS,
+        can_reject=complaint.status in REJECTABLE_STATUSES,
+    )
+
+
+def accept_complaint(user: User, complaint_id: str) -> None:
+    """Accept an Open complaint: it becomes In Progress and the user's (FR-12).
+
+    The row is locked while it changes, so two staff members who press
+    Accept at the same moment cannot both get the complaint.
+
+    Args:
+        user: The logged-in maintenance staff member.
+        complaint_id: The complaint ID.
+
+    Raises:
+        ServiceError: If the complaint does not exist, is Resolved or
+            Rejected, or already belongs to another staff member.
+    """
+    now = timezone.now()
+    with transaction.atomic():
+        complaint = _get_complaint_for_update(complaint_id)
+        if complaint.status not in REJECTABLE_STATUSES:
+            raise ServiceError(MSG_ONLY_OPEN_CAN_ACCEPT)
+        assigned_to_other = complaint.assigned_to_id not in (None, user.pk)
+        if complaint.status == COMPLAINT_IN_PROGRESS or assigned_to_other:
+            raise ServiceError(MSG_COMPLAINT_ALREADY_ASSIGNED)
+        complaint.status = COMPLAINT_IN_PROGRESS
+        complaint.assigned_to = user
+        complaint.status_changed_at = now
+        complaint.save(update_fields=("status", "assigned_to", "status_changed_at"))
+
+
+def resolve_complaint(user: User, complaint_id: str) -> None:
+    """Mark an In Progress complaint as Resolved (FR-13).
+
+    Args:
+        user: The logged-in staff member or supervisor.
+        complaint_id: The complaint ID.
+
+    Raises:
+        ServiceError: If the complaint does not exist, is not In Progress, or
+            belongs to another staff member and the user is not a supervisor.
+    """
+    now = timezone.now()
+    with transaction.atomic():
+        complaint = _get_complaint_for_update(complaint_id)
+        if complaint.status == COMPLAINT_OPEN:
+            raise ServiceError(MSG_ACCEPT_FIRST)
+        if complaint.status != COMPLAINT_IN_PROGRESS:
+            raise ServiceError(MSG_ONLY_IN_PROGRESS_CAN_RESOLVE)
+        _check_assigned_or_supervisor(user, complaint, MSG_ONLY_ASSIGNED_CAN_RESOLVE)
+        complaint.status = COMPLAINT_RESOLVED
+        complaint.resolved_at = now
+        complaint.status_changed_at = now
+        complaint.save(update_fields=("status", "resolved_at", "status_changed_at"))
+    # HOOK (FR-13 Confirmations 2 and 6, needs FR-05): notify the complainant,
+    # the followers and, when a supervisor resolved it, the assigned staff
+    # member here, once the notification feature exists.
+
+
+def reject_complaint(user: User, complaint_id: str, reason: str) -> None:
+    """Reject an Open or In Progress complaint with a reason (FR-20).
+
+    The reason, the person who rejected it and the time are saved.
+
+    Args:
+        user: The logged-in user.
+        complaint_id: The complaint ID.
+        reason: The checked, non-empty reason.
+
+    Raises:
+        ServiceError: If the user is not staff or a supervisor, the complaint
+            does not exist, is Resolved or Rejected, or is In Progress with
+            another staff member and the user is not a supervisor.
+    """
+    if user.role not in STAFF_ROLES:
+        raise ServiceError(MSG_ONLY_STAFF_CAN_REJECT)
+    now = timezone.now()
+    with transaction.atomic():
+        complaint = _get_complaint_for_update(complaint_id)
+        if complaint.status not in REJECTABLE_STATUSES:
+            raise ServiceError(MSG_ONLY_ACTIVE_CAN_REJECT)
+        if complaint.status == COMPLAINT_IN_PROGRESS:
+            _check_assigned_or_supervisor(user, complaint, MSG_ONLY_ASSIGNED_CAN_REJECT)
+        complaint.status = COMPLAINT_REJECTED
+        complaint.rejection_reason = reason
+        complaint.rejected_by = user
+        complaint.rejected_at = now
+        complaint.status_changed_at = now
+        complaint.save(
+            update_fields=(
+                "status",
+                "rejection_reason",
+                "rejected_by",
+                "rejected_at",
+                "status_changed_at",
+            )
+        )
+    # HOOK (FR-20 Confirmation 4, needs FR-05): notify the complainant and the
+    # followers, with the reason, once the notification feature exists.
+
+
 # --- Helpers: users and university records ---
 
 
@@ -937,3 +1158,42 @@ def _to_listed(user: User, complaints: Iterable[Complaint]) -> list[ListedCompla
         )
         for complaint in complaints
     ]
+
+
+def _get_complaint_for_update(complaint_id: str) -> Complaint:
+    """Find a complaint and lock its row until the transaction ends.
+
+    Call this inside ``transaction.atomic()``.
+
+    Args:
+        complaint_id: The complaint ID.
+
+    Returns:
+        The locked complaint.
+
+    Raises:
+        ServiceError: If there is no complaint with this ID.
+    """
+    complaint = (
+        Complaint.objects.select_for_update().filter(complaint_id=complaint_id).first()
+    )
+    if complaint is None:
+        raise ServiceError(MSG_COMPLAINT_NOT_FOUND)
+    return complaint
+
+
+def _check_assigned_or_supervisor(
+    user: User, complaint: Complaint, message: str
+) -> None:
+    """Allow an action only for the assigned staff member or a supervisor.
+
+    Args:
+        user: The logged-in staff member or supervisor.
+        complaint: The complaint being changed.
+        message: The SRS message to show when the user may not act.
+
+    Raises:
+        ServiceError: If the user is neither the assignee nor a supervisor.
+    """
+    if user.role != ROLE_SUPERVISOR and complaint.assigned_to_id != user.pk:
+        raise ServiceError(message)
