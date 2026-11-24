@@ -1,0 +1,45 @@
+I've read the code. No files have been changed yet. Here is the plan.
+
+# Plan: add the member's name to the university records
+
+## Stage 1: records layer
+
+| File                           | Change                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `campus/constants.py`          | Add `RECORD_KEY_NAME = "name"` in the "University records file (JSON keys)" block. `records.py` and `test_records.py` both use it.                                                                                                                                                                                                                             |
+| `campus/records.py`            | `UniversityMember` gets a required `name: str` field, placed right after `id_number` (no default). The docstring gets an `Attributes` entry for it. `JsonRecordsClient.find_member` reads `person[RECORD_KEY_NAME]` with square brackets, the same way it reads `role`, so a record with no name fails loudly (`KeyError`). It does not quietly become `None`. |
+| `campus/data/iub_records.json` | Add a fake `"name"` to each of the 6 people. Proposed: `Ayesha Rahman`, `Farhan Hossain`, `Kamal Uddin`, `Nusrat Jahan`, `Tanvir Ahmed`, `Sadia Islam`. I can use names like "Demo Student One" instead if you prefer.                                                                                                                                         |
+| `campus/tests/base.py`         | Add a name to each of the 6 `TEST_MEMBERS` constructor calls, using new test constants such as `STUDENT_NAME`. Nothing else changes.                                                                                                                                                                                                                           |
+| `campus/tests/fakes.py`        | Only the `change_member` docstring changes, so it lists `name` as a field you can change. The code already works for any field.                                                                                                                                                                                                                                |
+| `campus/tests/test_records.py` | Add a name to `TEMP_RECORDS` and to the expected member in `test_finds_member_by_id`. New tests: `test_finds_member_name` (normal case), `test_record_without_name_raises_key_error` (exception case, a temporary file with a person who has no name), and `ShippedRecordsFileTests.test_every_person_has_a_name` (every demo person has a non-empty name).    |
+
+## Stage 2: services layer
+
+| File                                           | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `campus/constants.py`                          | Add `MEMBER_NAME_MAX_LENGTH = 150`, with a comment saying it matches Django's own `first_name` limit. This follows the existing `OTP_HASH_MAX_LENGTH` example.                                                                                                                                                                                                                                                                                                                                                                  |
+| `campus/services.py`                           | Add a helper `_copy_records_details(user, member)` that sets `user.role` and `user.first_name`. `register_user` and `log_in_user` call it in place of the two `user.role = member.role` lines, so the copy logic lives in one place. A comment explains why: the records are the source of truth, the name goes in `first_name` so `get_full_name()` returns it, and `last_name` stays empty because the records hold one full name. The two docstrings will say that the name is copied too. No model change and no migration. |
+| `campus/tests/test_services_register.py`       | New tests: the name is stored at registration and `get_full_name()` returns it. If a pending account registers again after its name changed in the records, it gets the new name.                                                                                                                                                                                                                                                                                                                                               |
+| `campus/tests/test_services_login.py`          | New tests: login refreshes a name that changed in the records. A wrong password does not change the stored name, which mirrors the existing role test.                                                                                                                                                                                                                                                                                                                                                                          |
+| Boundary tests (in one of the two files above) | A name of exactly 150 characters is stored whole. A name of 151 characters is cut to 150.                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+
+**Names longer than the `first_name` limit (150):** the helper keeps the first 150 characters: `member.name[:MEMBER_NAME_MAX_LENGTH]`. Why:
+- SQLite does not enforce the length, so without a cut a long name would be saved whole. A stricter database later would then fail instead.
+- Rejecting the name with an error would block a real member from registering or logging in just because their name is long. That would change FR-01 and FR-02 behaviour.
+- The name is only shown on screen, so a shortened name does no harm.
+
+## Stage 3
+Only if you ask.
+
+## Checks after each stage
+From the repository root: `flake8 src`, `black --check src` and `pylint src/campus src/fixit_campus`. From `src/`: `python manage.py check`, `python manage.py test`, and `coverage run manage.py test` followed by `coverage report`, which shows statement and branch coverage. I'll report every result honestly.
+
+## Assumptions
+1. The records hold one full-name string. There is no separate first and last name.
+2. `name` is required in the records, just like `role`. A missing name is a broken records file, not "no name".
+3. Users already saved in `db.sqlite3` keep an empty `first_name` until they next log in. I won't touch the database.
+4. A pending user who asks for a new OTP (`request_new_registration_otp`) does not get their name refreshed, because the role isn't refreshed there either. Their next registration or login copies it.
+5. Nothing reads the name yet outside the tests, so no view, form or template changes in Stages 1 and 2, and no SRS message changes.
+6. I won't touch `docs/` and won't run any git commands.
+
+Do you approve this plan, and the fake names? I'll start Stage 1 once you confirm.
