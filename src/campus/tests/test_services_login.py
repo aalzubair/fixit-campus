@@ -8,6 +8,7 @@ from datetime import timedelta
 from campus.constants import (
     ACCOUNT_LOCK_MINUTES,
     LOGIN_MAX_FAILED_ATTEMPTS,
+    MEMBER_NAME_MAX_LENGTH,
     MSG_ACCOUNT_LOCKED,
     MSG_ACCOUNT_NO_LONGER_ACTIVE,
     MSG_INVALID_LOGIN,
@@ -30,6 +31,9 @@ from campus.tests.base import (
 
 LOCK_END = START_TIME + timedelta(minutes=ACCOUNT_LOCK_MINUTES)
 ONE_SECOND = timedelta(seconds=1)
+OLD_LAST_NAME = "Admin Surname"
+NAME_LETTER = "A"
+CUT_OFF_PART = "Lost"
 
 
 def stored_user() -> User:
@@ -232,3 +236,35 @@ class RecordsCheckAtLoginTests(LoginTestCase):
         self.records.change_member(STUDENT_ID, name=NEW_STUDENT_NAME)
         self.assert_login_rejected(WRONG_PASSWORD, MSG_INVALID_LOGIN)
         self.assertEqual(stored_user().get_full_name(), STUDENT_NAME)
+
+    def test_login_clears_existing_last_name(self) -> None:
+        """An old last_name (e.g. from the admin) is cleared at login."""
+        user = stored_user()
+        user.last_name = OLD_LAST_NAME
+        user.save()
+        logged_in_user = log_in_user(STUDENT_ID, GOOD_PASSWORD)
+        for checked_user in (logged_in_user, stored_user()):
+            with self.subTest(user=checked_user):
+                self.assertEqual(checked_user.get_full_name(), STUDENT_NAME)
+                self.assertEqual(checked_user.last_name, "")
+
+    def test_name_is_stripped_before_storing(self) -> None:
+        """Spaces around the name in the records are not stored."""
+        self.records.change_member(STUDENT_ID, name=f"  {NEW_STUDENT_NAME}  ")
+        log_in_user(STUDENT_ID, GOOD_PASSWORD)
+        self.assertEqual(stored_user().get_full_name(), NEW_STUDENT_NAME)
+
+    def test_padded_full_length_name_is_stripped_then_cut(self) -> None:
+        """Boundary: outer spaces do not push a full-length name over the limit."""
+        full_length_name = NAME_LETTER * MEMBER_NAME_MAX_LENGTH
+        self.records.change_member(STUDENT_ID, name=f"  {full_length_name}")
+        log_in_user(STUDENT_ID, GOOD_PASSWORD)
+        self.assertEqual(stored_user().first_name, full_length_name)
+
+    def test_cut_ending_on_a_space_leaves_no_trailing_space(self) -> None:
+        """Boundary: if the last kept character is a space, it is removed."""
+        kept_part = NAME_LETTER * (MEMBER_NAME_MAX_LENGTH - 1)
+        long_name = f"{kept_part} {CUT_OFF_PART}"
+        self.records.change_member(STUDENT_ID, name=long_name)
+        log_in_user(STUDENT_ID, GOOD_PASSWORD)
+        self.assertEqual(stored_user().first_name, kept_part)

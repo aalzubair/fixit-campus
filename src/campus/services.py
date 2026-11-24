@@ -286,15 +286,21 @@ def _copy_records_details(user: User, member: UniversityMember) -> None:
     """Copy the name and role from the university records (does not save).
 
     The full name goes into Django's existing ``first_name`` field and
-    ``last_name`` stays empty, so ``get_full_name()`` returns it without a
-    new model field or migration. A name longer than the field is cut,
-    because a long name must not stop a member from registering or logging in.
+    ``last_name`` is cleared, so ``get_full_name()`` returns exactly the
+    records name without a new model field or migration. ``last_name`` is
+    cleared because an account made another way (for example in the admin)
+    may already have one. The name is stripped before it is cut, so outer
+    spaces do not use up the field length, and stripped again after the cut,
+    so a cut that ends on a space leaves no trailing space. A name longer
+    than the field is cut, because a long name must not stop a member from
+    registering or logging in.
 
     Args:
         user: The user to update.
         member: The same person in the university records.
     """
-    user.first_name = member.name[:MEMBER_NAME_MAX_LENGTH]
+    user.first_name = member.name.strip()[:MEMBER_NAME_MAX_LENGTH].rstrip()
+    user.last_name = ""
     user.role = member.role
 
 

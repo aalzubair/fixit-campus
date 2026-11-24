@@ -14,6 +14,7 @@ from campus.constants import (
     RECORD_KEY_MOBILE,
     RECORD_KEY_NAME,
     RECORD_KEY_ROLE,
+    RECORDS_ERROR_EMPTY_NAME,
     RECORDS_FILE_ENCODING,
     ROLE_CHOICES,
     ROLE_FACULTY,
@@ -52,6 +53,49 @@ TEMP_RECORDS = [
     # Name left out on purpose: the name is required, like the role.
     {RECORD_KEY_ID_NUMBER: FACULTY_ID, RECORD_KEY_ROLE: ROLE_FACULTY},
 ]
+EMPTY_NAME = ""
+WHITESPACE_ONLY_NAME = "  \t\n "
+PADDED_STUDENT_NAME = f"  {STUDENT_NAME}  "
+
+
+def make_student(name: str) -> UniversityMember:
+    """Build a student member with the given name.
+
+    Args:
+        name: The name to put in the record.
+
+    Returns:
+        The new member.
+
+    Raises:
+        ValueError: If the name is empty or only whitespace.
+    """
+    return UniversityMember(STUDENT_ID, name, ROLE_STUDENT, STUDENT_EMAIL, None)
+
+
+class UniversityMemberTests(SimpleTestCase):
+    """UniversityMember rejects a blank name for every records client."""
+
+    def test_empty_name_raises_value_error(self) -> None:
+        """Exception: an empty name means the records data is wrong."""
+        with self.assertRaises(ValueError):
+            make_student(EMPTY_NAME)
+
+    def test_whitespace_only_name_raises_value_error(self) -> None:
+        """Exception: a name of only spaces, tabs or newlines is rejected."""
+        with self.assertRaises(ValueError):
+            make_student(WHITESPACE_ONLY_NAME)
+
+    def test_error_message_names_the_id_not_the_name(self) -> None:
+        """The error shows which record is wrong."""
+        with self.assertRaisesMessage(
+            ValueError, RECORDS_ERROR_EMPTY_NAME.format(id_number=STUDENT_ID)
+        ):
+            make_student(WHITESPACE_ONLY_NAME)
+
+    def test_name_with_surrounding_spaces_is_accepted(self) -> None:
+        """Boundary: a real name with spaces around it is valid, unchanged."""
+        self.assertEqual(make_student(PADDED_STUDENT_NAME).name, PADDED_STUDENT_NAME)
 
 
 class JsonRecordsClientTests(SimpleTestCase):
@@ -68,12 +112,7 @@ class JsonRecordsClientTests(SimpleTestCase):
     def test_finds_member_by_id(self) -> None:
         """A known ID returns the member with name, role and contact details."""
         member = self.client_under_test.find_member(STUDENT_ID)
-        self.assertEqual(
-            member,
-            UniversityMember(
-                STUDENT_ID, STUDENT_NAME, ROLE_STUDENT, STUDENT_EMAIL, None
-            ),
-        )
+        self.assertEqual(member, make_student(STUDENT_NAME))
 
     def test_finds_member_name(self) -> None:
         """The name is read from the "name" key of the record."""
@@ -84,6 +123,13 @@ class JsonRecordsClientTests(SimpleTestCase):
         """Exception: a record with no name is a broken records file."""
         with self.assertRaises(KeyError):
             self.client_under_test.find_member(FACULTY_ID)
+
+    def test_record_with_empty_name_raises_value_error(self) -> None:
+        """Exception: an empty name in the JSON file is broken records data."""
+        record = {**TEMP_RECORDS[0], RECORD_KEY_NAME: EMPTY_NAME}
+        self.file_path.write_text(json.dumps([record]), RECORDS_FILE_ENCODING)
+        with self.assertRaises(ValueError):
+            self.client_under_test.find_member(STUDENT_ID)
 
     def test_missing_contact_keys_become_none(self) -> None:
         """Missing email and mobile keys are read as None."""
