@@ -93,6 +93,6 @@ class FakeRecordsClient(RecordsClient):
 
         Args:
             id_number: The IUB ID number of the person.
-            changes: New values for ``role``, ``email`` or ``mobile``.
+            changes: New values for ``name``, ``role``, ``email`` or ``mobile``.
         """
         self._members[id_number] = replace(self._members[id_number], **changes)

@@ -22,6 +22,7 @@ from campus.constants import (
     MSG_NOT_AUTHORIZED,
     MSG_SESSION_EXPIRED,
     ROLE_ADMINISTRATOR,
+    ROLE_CHOICES,
     ROLE_FACULTY,
     ROLE_STUDENT,
     SESSION_IDLE_TIMEOUT_MINUTES,
@@ -43,6 +44,7 @@ from campus.tests.base import (
     MOBILE_ONLY_ID,
     NEW_PASSWORD,
     STUDENT_ID,
+    STUDENT_NAME,
     SUPERVISOR_ID,
     UNKNOWN_ID,
     WRONG_PASSWORD,
@@ -60,6 +62,7 @@ HEADING_BY_ROLE = {role: heading for role, heading, _ in HOME_PAGE_TEXT}
 CSRF_FIELD = 'name="csrfmiddlewaretoken"'
 CSRF_VALUE_PATTERN = CSRF_FIELD + r' value="[^"]*"'
 BFCACHE_SCRIPT = 'id="bfcache-reload"'
+STUDENT_ROLE_LABEL = dict(ROLE_CHOICES)[ROLE_STUDENT]
 
 
 @role_required(ROLE_ADMINISTRATOR)
@@ -238,14 +241,22 @@ class NavbarTests(AuthPageTestCase):
         self.assertContains(response, "Register")
         self.assertNotContains(response, "Log out")
 
-    def test_logged_in_navbar_shows_id_role_and_log_out(self) -> None:
-        """Logged in: the ID, the role name and a "Log out" button."""
+    def test_logged_in_navbar_shows_name_role_and_log_out(self) -> None:
+        """Logged in: the full name, the role name and a "Log out" button."""
         self.post_login(STUDENT_ID, GOOD_PASSWORD)
         response = self.client.get(HOME_URL)
-        self.assertContains(response, STUDENT_ID)
-        self.assertContains(response, "Student")
+        self.assertContains(response, f"{STUDENT_NAME} · {STUDENT_ROLE_LABEL}")
+        self.assertNotContains(response, STUDENT_ID)
         self.assertContains(response, "Log out")
         self.assertContains(response, f'action="{LOGOUT_URL}"')
+
+    def test_navbar_shows_id_when_user_has_no_name(self) -> None:
+        """An account saved before names were copied shows the ID instead."""
+        User.objects.filter(username=STUDENT_ID).update(first_name="")
+        self.client.force_login(User.objects.get(username=STUDENT_ID))
+        response = self.client.get(HOME_URL)
+        self.assertContains(response, f"{STUDENT_ID} · {STUDENT_ROLE_LABEL}")
+        self.assertNotContains(response, STUDENT_NAME)
 
 
 class LogoutTests(AuthPageTestCase):

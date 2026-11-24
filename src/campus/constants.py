@@ -32,6 +32,8 @@ ROLE_CHOICES = (
     (ROLE_ADMINISTRATOR, "University Administration"),
 )
 ROLE_MAX_LENGTH = 20
+# Same size as Django's own ``first_name`` field, where the name is stored.
+MEMBER_NAME_MAX_LENGTH = 150
 
 # --- Account statuses ---
 # "Locked" is not a status: it is derived from ``User.locked_until`` so the
@@ -142,9 +144,12 @@ HOME_PAGE_TEXT = (
 # --- University records file (JSON keys) ---
 RECORDS_FILE_ENCODING = "utf-8"
 RECORD_KEY_ID_NUMBER = "id_number"
+RECORD_KEY_NAME = "name"
 RECORD_KEY_ROLE = "role"
 RECORD_KEY_EMAIL = "email"
 RECORD_KEY_MOBILE = "mobile"
+# Developer-facing: the records data is wrong. Leaves out the name itself.
+RECORDS_ERROR_EMPTY_NAME = "University record {id_number} has an empty name."
 
 # --- Development-only console OTP sender ---
 CONSOLE_OTP_MESSAGE = "[DEVELOPMENT ONLY] OTP for {destination}: {code}"
