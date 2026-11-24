@@ -1,0 +1,96 @@
+<!-- My Complaints (FR-09): two tabs, the complaints the user submitted and the ones they follow. -->
+{% extends "campus/app_base.html" %}
+
+{% block title %}My complaints | FixIt Campus{% endblock %}
+{% block nav_mine %} active fw-semibold text-primary{% endblock %}
+
+{% block content %}
+  <div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+      <h2 class="h3 fw-bold">My Complaints</h2>
+      <p class="text-secondary mb-0">Track the status of complaints you submitted or follow.</p>
+    </div>
+    <a href="{% url 'submit_complaint' %}" class="btn btn-primary">Submit a complaint</a>
+  </div>
+
+  {% include "campus/_messages.html" %}
+
+  <ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+      <a class="nav-link{% if tab == tab_mine %} active{% endif %}" href="{% url 'my_complaints' %}">My complaints ({{ my.own|length }})</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link{% if tab == tab_following %} active{% endif %}" href="{% url 'my_complaints' %}?tab={{ tab_following }}">Following ({{ my.following|length }})</a>
+    </li>
+  </ul>
+
+  {% if tab == tab_following %}
+    {% if my.following %}
+      <div class="alert alert-info small">You will get a notification when a complaint you follow is Resolved or Rejected. Details of other people's complaints are never shown.</div>
+      <div class="card shadow-sm">
+        <div class="table-responsive">
+          <table class="table align-middle mb-0">
+            <thead class="table-light">
+              <tr><th>Category</th><th>Location</th><th>Status</th><th>Last status change</th><th></th></tr>
+            </thead>
+            <tbody>
+              {% for item in my.following %}
+                <tr>
+                  <td class="fw-semibold">{{ item.summary.category }}</td>
+                  <td>{{ item.summary.location }}</td>
+                  <td>{% include "campus/_status_badge.html" with status=item.summary.status label=item.summary.status_label %}</td>
+                  <td>{{ item.summary.status_changed_at|date:"j M Y" }}<div class="small text-secondary">{{ item.summary.status_changed_at|date:"H:i" }}</div></td>
+                  <td class="text-end">
+                    <form method="post" action="{% url 'unfollow_complaint' item.summary.complaint_id %}" class="m-0">
+                      {% csrf_token %}
+                      <button type="submit" class="btn btn-sm btn-outline-secondary">Stop following</button>
+                    </form>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% else %}
+      <div class="card shadow-sm"><div class="card-body text-center text-secondary">{{ empty_message }}</div></div>
+    {% endif %}
+  {% else %}
+    {% if my.own %}
+      <div class="card shadow-sm">
+        <div class="table-responsive">
+          <table class="table align-middle mb-0">
+            <thead class="table-light">
+              <tr><th>Complaint</th><th>Location</th><th>Status</th><th>Last status change</th><th></th></tr>
+            </thead>
+            <tbody>
+              {% for complaint in my.own %}
+                <tr>
+                  <td>
+                    <div class="small text-secondary">{{ complaint.complaint_id }}</div>
+                    <div class="fw-semibold">{{ complaint.get_category_display }}</div>
+                    {% if complaint.is_safety_hazard %}{% include "campus/_safety_badge.html" %}{% endif %}
+                  </td>
+                  <td>
+                    {{ complaint.location_label }}
+                    {% if complaint.status == 'rejected' and complaint.rejection_reason %}
+                      <div class="small text-danger">Reason: {{ complaint.rejection_reason }}</div>
+                    {% endif %}
+                  </td>
+                  <td>{% include "campus/_status_badge.html" with status=complaint.status label=complaint.get_status_display %}</td>
+                  <td>{{ complaint.status_changed_at|date:"j M Y" }}<div class="small text-secondary">{{ complaint.status_changed_at|date:"H:i" }}</div></td>
+                  <td class="text-end">
+                    <a href="{% url 'complaint_detail' complaint.complaint_id %}" class="btn btn-sm btn-outline-secondary">View</a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <p class="small text-secondary mt-3">Resolved complaints can be reopened within 7 days of being resolved.</p>
+    {% else %}
+      <div class="card shadow-sm"><div class="card-body text-center text-secondary">{{ empty_message }}</div></div>
+    {% endif %}
+  {% endif %}
+{% endblock %}

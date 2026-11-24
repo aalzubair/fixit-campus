@@ -1,0 +1,10 @@
+<!-- A dropdown for a ChoiceField. Include with: field=<the form field>, placeholder=<first option text>, invalid=<true to highlight>. -->
+<select name="{{ field.html_name }}" id="{{ field.id_for_label }}"
+        class="form-select{% if field.errors or invalid %} is-invalid{% endif %}">
+  <option value="">{{ placeholder }}</option>
+  {% for value, label in field.field.choices %}
+    {% if value %}
+      <option value="{{ value }}"{% if field.value == value %} selected{% endif %}>{{ label }}</option>
+    {% endif %}
+  {% endfor %}
+</select>

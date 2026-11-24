@@ -1,0 +1,13 @@
+<!-- Registration finished (FR-01): confirms that the account is activated. -->
+{% extends "campus/base.html" %}
+
+{% block title %}Account activated | FixIt Campus{% endblock %}
+
+{% block content %}
+  <h2 class="h4 fw-bold">Account activated</h2>
+  <p class="text-secondary">
+    Your account is activated with the role stored in the university records.
+    You can now log in with your IUB ID number and password.
+  </p>
+  <a href="{% url 'login' %}" class="btn btn-primary w-100">Log in</a>
+{% endblock %}

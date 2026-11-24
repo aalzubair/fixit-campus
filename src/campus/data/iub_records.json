@@ -1,0 +1,38 @@
+[
+  {
+    "id_number": "2310001",
+    "role": "student",
+    "email": "student.one@iub.example",
+    "mobile": "+8801700000001"
+  },
+  {
+    "id_number": "2310002",
+    "role": "faculty",
+    "email": "faculty.one@iub.example",
+    "mobile": null
+  },
+  {
+    "id_number": "2310003",
+    "role": "maintenance_staff",
+    "email": null,
+    "mobile": "+8801700000003"
+  },
+  {
+    "id_number": "2310004",
+    "role": "supervisor",
+    "email": "supervisor.one@iub.example",
+    "mobile": "+8801700000004"
+  },
+  {
+    "id_number": "2310005",
+    "role": "administrator",
+    "email": "admin.one@iub.example",
+    "mobile": "+8801700000005"
+  },
+  {
+    "id_number": "2310006",
+    "role": "student",
+    "email": null,
+    "mobile": null
+  }
+]

@@ -1,0 +1,4 @@
+<!-- Shows the one-time messages added by the views: errors in red, success in green, information in blue. -->
+{% for message in messages %}
+  <div class="small fw-semibold mb-3 {% if message.tags == 'error' %}text-danger{% elif message.tags == 'success' %}text-success{% else %}text-primary{% endif %}">{{ message }}</div>
+{% endfor %}

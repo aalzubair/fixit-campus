@@ -1,0 +1,17 @@
+<!-- Home page (FR-02): a placeholder heading and text for the logged-in user's role. Real home pages come with later features. -->
+{% extends "campus/base.html" %}
+
+{% block title %}Home | FixIt Campus{% endblock %}
+
+{% block content %}
+  <p class="text-primary small mb-1">{{ user.get_role_display }}</p>
+  <h2 class="h4 fw-bold">{{ heading }}</h2>
+  <p class="text-secondary{% if can_use_complaints %} mb-3{% else %} mb-0{% endif %}">{{ text }}</p>
+  {% if can_use_complaints %}
+    <div class="d-flex flex-wrap gap-2">
+      <a href="{% url 'submit_complaint' %}" class="btn btn-sm btn-primary">Submit Complaint</a>
+      <a href="{% url 'existing_complaints' %}" class="btn btn-sm btn-outline-primary">Existing Complaints</a>
+      <a href="{% url 'my_complaints' %}" class="btn btn-sm btn-outline-primary">My Complaints</a>
+    </div>
+  {% endif %}
+{% endblock %}
