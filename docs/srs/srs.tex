@@ -48,7 +48,7 @@ FixIt Campus (the Campus Complaint \& Maintenance System) is a web-based mainten
 \begin{itemize}
   \item It is not an emergency service and does not replace contacting campus security.
   \item It does not manage inventory, procurement, budgets, or staff schedules.
-  \item It does not create or edit university records (IDs, roles, contact details).
+  \item It does not create or edit university records (IDs, names, roles, contact details).
   \item It does not provide chat between users, automatic assignment of complaints, or a native mobile app.
   \item It does not provide access for visitors or guests without an IUB ID.
   \item It does not let users delete notifications, and notifications do not expire.
@@ -209,13 +209,13 @@ The needs below describe what each user class must be able to achieve. Each need
   \item \textbf{Browsers:} The latest two versions of Google Chrome, Microsoft Edge, Mozilla Firefox, and Apple Safari.
   \item \textbf{Network:} Requires an internet or campus network connection. There is no offline mode.
   \item \textbf{Server side:} A web server and a relational database that store users, complaints, and uploaded photos. The hosting platform will be decided during the design phase.
-  \item \textbf{External interfaces:} The IUB university records (ID number, role, email, mobile number) and a message delivery service (email or SMS) for sending one-time passwords (OTP) and Safety Hazard alerts.
+  \item \textbf{External interfaces:} The IUB university records (ID number, name, role, email, mobile number) and a message delivery service (email or SMS) for sending one-time passwords (OTP) and Safety Hazard alerts.
 \end{itemize}
 
 \section{Constraints}
 \begin{enumerate}
   \item The system is developed as a course project by a team of four students within the semester schedule.
-  \item User accounts, roles, and contact details come from the IUB university records. The system cannot create or edit them.
+  \item User accounts, names, roles, and contact details come from the IUB university records. The system cannot create or edit them.
   \item Sending OTPs and Safety Hazard alerts depends on an external message delivery service (email or SMS).
   \item The system is web-based only. There is no native mobile app.
   \item The solution must follow the course requirements: an architectural pattern, unit tests, and Nielsen's usability heuristics for the user interface.
@@ -223,7 +223,7 @@ The needs below describe what each user class must be able to achieve. Each need
 
 \section{Assumptions}
 \begin{enumerate}
-  \item The IUB records (ID number, role, email, mobile number) are accurate and available to the system, and include faculty members and administrators. \textit{If false: users cannot register or receive the wrong role.}
+  \item The IUB records (ID number, name, role, email, mobile number) are accurate and available to the system, and include faculty members and administrators. \textit{If false: users cannot register or receive the wrong role.}
   \item Every user has an internet-connected device with a supported browser. \textit{If false: they cannot use the system.}
   \item Every user has at least one registered email address or mobile number for receiving the OTP. \textit{If false: they cannot complete registration (FR-01) or reset a password (FR-04).}
   \item The university provides a standard list of buildings, floors, rooms or areas, and complaint categories, which is loaded into the system before use. Users select a location from this list. \textit{If false: duplicate detection (FR-07) and location history (FR-14) become unreliable.}
