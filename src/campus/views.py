@@ -8,7 +8,7 @@ the session (log in, log out) also happens only here.
 """
 
 from collections.abc import Callable
-from functools import wraps
+from functools import partial, wraps
 from http import HTTPStatus
 
 from django.contrib import messages
@@ -23,20 +23,28 @@ from django.views.decorators.http import require_GET, require_POST
 from campus.constants import (
     COMPLAINANT_ROLES,
     HOME_PAGE_TEXT,
+    MSG_COMPLAINT_ACCEPTED,
     MSG_COMPLAINT_NOT_ALLOWED,
+    MSG_COMPLAINT_NOT_FOUND,
     MSG_COMPLAINT_NOT_SAVED,
+    MSG_COMPLAINT_REJECTED,
     MSG_COMPLAINT_REOPENED,
+    MSG_COMPLAINT_RESOLVED,
     MSG_FOLLOWING_STARTED,
     MSG_FOLLOWING_STOPPED,
     MSG_NEW_OTP_SENT,
-    MSG_NO_COMPLAINTS,
-    MSG_NO_FILTER_MATCH,
     MSG_NOT_AUTHORIZED,
+    MSG_NO_COMPLAINTS,
+    MSG_NO_COMPLAINT_HISTORY,
+    MSG_NO_FILTER_MATCH,
+    MSG_ONLY_STAFF_CAN_REJECT,
     MSG_PASSWORD_CHANGED,
     MSG_REOPEN_EXPIRED,
     MSG_RESET_OTP_SENT,
+    ROLE_MAINTENANCE_STAFF,
     SESSION_REGISTER_ID_NUMBER,
     SESSION_RESET_ID_NUMBER,
+    STAFF_ROLES,
     TAB_FOLLOWING,
     TAB_MY_COMPLAINTS,
     TEMPLATE_COMPLAINT_DETAIL,
@@ -51,8 +59,11 @@ from campus.constants import (
     TEMPLATE_REGISTER,
     TEMPLATE_REGISTER_DONE,
     TEMPLATE_REGISTER_VERIFY,
+    TEMPLATE_REJECT_COMPLAINT,
     TEMPLATE_REOPEN_COMPLAINT,
     TEMPLATE_SIMILAR_COMPLAINTS,
+    TEMPLATE_STAFF_COMPLAINTS,
+    TEMPLATE_STAFF_COMPLAINT_DETAIL,
     TEMPLATE_SUBMIT_COMPLAINT,
     URL_NAME_COMPLAINT_DETAIL,
     URL_NAME_COMPLAINT_SUBMITTED,
@@ -65,6 +76,7 @@ from campus.constants import (
     URL_NAME_REGISTER,
     URL_NAME_REGISTER_DONE,
     URL_NAME_REGISTER_VERIFY,
+    URL_NAME_STAFF_COMPLAINT_DETAIL,
 )
 from campus.forms import (
     BrowseFilterForm,
@@ -75,30 +87,40 @@ from campus.forms import (
     PasswordResetRequestForm,
     PasswordResetVerifyForm,
     RegisterForm,
+    RejectForm,
     ReopenForm,
+    StaffFilterForm,
 )
 from campus.services import (
     BrowseFilters,
     ComplaintDraft,
     ServiceError,
+    StaffFilters,
+    accept_complaint,
     browse_complaints,
     follow_complaint,
     get_complaint_detail,
     get_complaint_photo,
     get_similar_complaints,
+    get_staff_complaint_detail,
     list_my_complaints,
+    list_staff_complaints,
     log_in_user,
     register_user,
+    reject_complaint,
+    reopen_complaint,
     request_new_registration_otp,
     request_password_reset,
-    reopen_complaint,
     reset_password,
+    resolve_complaint,
     submit_complaint,
     unfollow_complaint,
     verify_registration_otp,
 )
 
 ViewFunction = Callable[..., HttpResponse]
+# A staff action service such as ``accept_complaint(user, complaint_id)``.
+StaffAction = Callable[..., None]
 
 
 # --- Access control ---
@@ -305,6 +327,7 @@ def home_view(request: HttpRequest) -> HttpResponse:
         "heading": heading,
         "text": text,
         "can_use_complaints": request.user.role in COMPLAINANT_ROLES,
+        "can_handle_complaints": request.user.role in STAFF_ROLES,
     }
     return render(request, TEMPLATE_HOME, context)
 
@@ -647,3 +670,152 @@ def reopen_complaint_view(request: HttpRequest, complaint_id: str) -> HttpRespon
     if not detail.can_reopen:
         return redirect(URL_NAME_COMPLAINT_DETAIL, complaint_id=complaint_id)
     return render(request, TEMPLATE_REOPEN_COMPLAINT, {"form": form, "detail": detail})
+
+
+# --- F5 Staff actions (FR-11 to FR-14, FR-20) ---
+
+
+def _run_staff_action(
+    request: HttpRequest, complaint_id: str, action: StaffAction, success: str
+) -> HttpResponse:
+    """Call one staff action and go back to the complaint (FR-12, FR-13).
+
+    Args:
+        request: The HTTP request of a staff member or supervisor.
+        complaint_id: The complaint ID from the address.
+        action: The service function to call with the user and the ID.
+        success: The message to show when the action worked.
+
+    Returns:
+        A redirect to the complaint, which shows the success or the SRS
+        error message.
+
+    Raises:
+        Http404: If there is no complaint with this ID.
+    """
+    try:
+        action(request.user, complaint_id)
+    except ServiceError as error:
+        if error.message == MSG_COMPLAINT_NOT_FOUND:
+            raise Http404(error.message) from error
+        messages.error(request, error.message)
+    else:
+        messages.success(request, success)
+    return redirect(URL_NAME_STAFF_COMPLAINT_DETAIL, complaint_id=complaint_id)
+
+
+@role_required(*STAFF_ROLES)
+@require_GET
+def staff_complaints_view(request: HttpRequest) -> HttpResponse:
+    """List every complaint for staff, with filters (FR-11).
+
+    Args:
+        request: The HTTP request; the filters are in the query string.
+
+    Returns:
+        The list page, with a message when nothing matches.
+    """
+    form = StaffFilterForm(request.GET)
+    filters = StaffFilters(**form.cleaned_data) if form.is_valid() else StaffFilters()
+    has_filters = filters != StaffFilters()
+    context = {
+        "form": form,
+        "complaints": list_staff_complaints(filters),
+        "can_accept": request.user.role == ROLE_MAINTENANCE_STAFF,
+        "empty_message": MSG_NO_FILTER_MATCH if has_filters else MSG_NO_COMPLAINTS,
+    }
+    return render(request, TEMPLATE_STAFF_COMPLAINTS, context)
+
+
+@role_required(*STAFF_ROLES)
+@require_GET
+def staff_complaint_detail_view(
+    request: HttpRequest, complaint_id: str
+) -> HttpResponse:
+    """Show one complaint with its actions and location history (FR-14).
+
+    Args:
+        request: The HTTP request of a staff member or supervisor.
+        complaint_id: The complaint ID from the address.
+
+    Returns:
+        The detail page.
+
+    Raises:
+        Http404: If there is no complaint with this ID.
+    """
+    try:
+        detail = get_staff_complaint_detail(request.user, complaint_id)
+    except ServiceError as error:
+        raise Http404(error.message) from error
+    context = {"detail": detail, "empty_history_message": MSG_NO_COMPLAINT_HISTORY}
+    return render(request, TEMPLATE_STAFF_COMPLAINT_DETAIL, context)
+
+
+@role_required(ROLE_MAINTENANCE_STAFF)
+@require_POST
+def accept_complaint_view(request: HttpRequest, complaint_id: str) -> HttpResponse:
+    """Accept an Open complaint (FR-12).
+
+    Args:
+        request: The HTTP request of a maintenance staff member.
+        complaint_id: The complaint ID from the address.
+
+    Returns:
+        A redirect to the complaint.
+    """
+    return _run_staff_action(
+        request, complaint_id, accept_complaint, MSG_COMPLAINT_ACCEPTED
+    )
+
+
+@role_required(*STAFF_ROLES)
+@require_POST
+def resolve_complaint_view(request: HttpRequest, complaint_id: str) -> HttpResponse:
+    """Mark an In Progress complaint as Resolved (FR-13).
+
+    Args:
+        request: The HTTP request of a staff member or supervisor.
+        complaint_id: The complaint ID from the address.
+
+    Returns:
+        A redirect to the complaint.
+    """
+    return _run_staff_action(
+        request, complaint_id, resolve_complaint, MSG_COMPLAINT_RESOLVED
+    )
+
+
+@never_cache
+@login_required
+def reject_complaint_view(request: HttpRequest, complaint_id: str) -> HttpResponse:
+    """Ask for a reason and reject a complaint (FR-20).
+
+    Students, faculty members and administrators get the FR-20 message
+    instead of the general "not authorized" page.
+
+    Args:
+        request: The HTTP request of a logged-in user.
+        complaint_id: The complaint ID from the address.
+
+    Returns:
+        The reason form, or a redirect to the complaint.
+
+    Raises:
+        Http404: If there is no complaint with this ID.
+    """
+    if request.user.role not in STAFF_ROLES:
+        return _forbidden(request, MSG_ONLY_STAFF_CAN_REJECT)
+    form = RejectForm(request.POST) if request.method == "POST" else RejectForm()
+    if request.method == "POST" and form.is_valid():
+        return _run_staff_action(
+            request,
+            complaint_id,
+            partial(reject_complaint, reason=form.cleaned_data["reason"]),
+            MSG_COMPLAINT_REJECTED,
+        )
+    try:
+        detail = get_staff_complaint_detail(request.user, complaint_id)
+    except ServiceError as error:
+        raise Http404(error.message) from error
+    return render(request, TEMPLATE_REJECT_COMPLAINT, {"form": form, "detail": detail})
