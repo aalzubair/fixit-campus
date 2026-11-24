@@ -1,0 +1,33 @@
+<!-- Reject a complaint (FR-20): a required reason. The complainant and followers will see it. -->
+{% extends "campus/staff_base.html" %}
+
+{% block title %}Reject complaint | FixIt Campus{% endblock %}
+
+{% block content %}
+  {% with complaint=detail.complaint %}
+    <div class="card shadow-sm mx-auto" style="max-width: 36rem;">
+      <div class="card-body p-4">
+        <h2 class="h4 fw-bold">Reject complaint {{ complaint.complaint_id }}?</h2>
+        <div class="bg-light rounded p-2 small mb-3">
+          {{ complaint.get_category_display }}, {{ complaint.location_label }}
+        </div>
+        <p class="small text-secondary">The complainant and followers will be notified. Rejected complaints are never marked Overdue and are not counted in reports.</p>
+        <form method="post" action="{% url 'reject_complaint' complaint.complaint_id %}" novalidate>
+          {% csrf_token %}
+          <div class="mb-3">
+            <label for="{{ form.reason.id_for_label }}" class="form-label fw-semibold">Reason for rejecting <span class="text-danger">*</span></label>
+            <textarea name="reason" id="{{ form.reason.id_for_label }}" rows="4" maxlength="500"
+                      placeholder="e.g. Same problem already reported, or not a maintenance issue"
+                      class="form-control{% if form.reason.errors %} is-invalid{% endif %}">{{ form.reason.value|default:'' }}</textarea>
+            <div class="form-text">Required. The complainant will see this reason.</div>
+            {% include "campus/_errors.html" with errors=form.reason.errors %}
+          </div>
+          <div class="d-flex justify-content-end gap-2">
+            <a href="{% url 'staff_complaint_detail' complaint.complaint_id %}" class="btn btn-outline-secondary">Cancel</a>
+            <button type="submit" class="btn btn-danger">Reject complaint</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  {% endwith %}
+{% endblock %}

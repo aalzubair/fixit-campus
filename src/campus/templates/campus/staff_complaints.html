@@ -1,0 +1,75 @@
+<!-- Staff complaint list (FR-11): every complaint with status, category, location and Safety Hazard filters. Safety Hazard complaints come first. Staff can accept an Open complaint here (FR-12). -->
+{% extends "campus/staff_base.html" %}
+
+{% block title %}Complaints | FixIt Campus{% endblock %}
+
+{% block content %}
+  <h2 class="h3 fw-bold">Complaints</h2>
+  <p class="text-secondary">Safety Hazard complaints always appear at the top. Filter to find what you need.</p>
+
+  {% include "campus/_messages.html" %}
+
+  <form method="get" action="{% url 'staff_complaints' %}" class="card shadow-sm mb-3">
+    <div class="card-body row g-3 align-items-end">
+      <div class="col-md-2">
+        <label for="id_status" class="form-label small fw-semibold">Status</label>
+        {% include "campus/_select.html" with field=form.status placeholder="All statuses" %}
+      </div>
+      <div class="col-md-3">
+        <label for="id_category" class="form-label small fw-semibold">Category</label>
+        {% include "campus/_select.html" with field=form.category placeholder="All categories" %}
+      </div>
+      <div class="col-md-3">
+        <label for="id_building" class="form-label small fw-semibold">Location</label>
+        {% include "campus/_select.html" with field=form.building placeholder="All locations" %}
+      </div>
+      <div class="col-md-2">
+        <div class="form-check mb-2">
+          <input type="checkbox" name="safety_hazard_only" id="id_safety_hazard_only" class="form-check-input"{% if form.safety_hazard_only.value %} checked{% endif %}>
+          <label for="id_safety_hazard_only" class="form-check-label small">Safety Hazard only</label>
+        </div>
+      </div>
+      <div class="col-md-2 d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Apply</button>
+        <a href="{% url 'staff_complaints' %}" class="btn btn-outline-secondary">Clear</a>
+      </div>
+    </div>
+  </form>
+
+  {% if complaints %}
+    <p class="small text-secondary">Showing {{ complaints|length }} complaint{{ complaints|length|pluralize }}</p>
+    <div class="card shadow-sm">
+      <div class="table-responsive">
+        <table class="table align-middle mb-0">
+          <thead class="table-light">
+            <tr><th>ID</th><th>Category</th><th>Location</th><th>Status</th><th>Flags</th><th>Assigned to</th><th>Submitted</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for complaint in complaints %}
+              <tr{% if complaint.is_safety_hazard %} class="table-danger"{% endif %}>
+                <td class="fw-semibold">{{ complaint.complaint_id }}</td>
+                <td>{{ complaint.get_category_display }}</td>
+                <td>{{ complaint.location_label }}</td>
+                <td>{% include "campus/_status_badge.html" with status=complaint.status label=complaint.get_status_display %}</td>
+                <td>{% if complaint.is_safety_hazard %}{% include "campus/_safety_badge.html" %}{% endif %}</td>
+                <td>{% if complaint.assigned_to %}{% if complaint.assigned_to == user %}{{ complaint.assigned_to.username }} (you){% else %}{{ complaint.assigned_to.username }}{% endif %}{% else %}<span class="text-secondary">Not assigned</span>{% endif %}</td>
+                <td>{{ complaint.created_at|date:"j M Y" }}</td>
+                <td class="text-end text-nowrap">
+                  {% if can_accept and complaint.status == "open" and not complaint.assigned_to %}
+                    <form method="post" action="{% url 'accept_complaint' complaint.complaint_id %}" class="d-inline m-0">
+                      {% csrf_token %}
+                      <button type="submit" class="btn btn-sm btn-primary">Accept</button>
+                    </form>
+                  {% endif %}
+                  <a href="{% url 'staff_complaint_detail' complaint.complaint_id %}" class="btn btn-sm btn-link">View &rarr;</a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% else %}
+    <div class="card shadow-sm"><div class="card-body text-center text-secondary">{{ empty_message }}</div></div>
+  {% endif %}
+{% endblock %}
