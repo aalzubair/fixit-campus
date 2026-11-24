@@ -20,7 +20,7 @@ P -[norank]-> S : complaint list, location history,\nnotifications
 V --> P : assign, resolve, reject\nand monitor requests
 P -[norank]-> V : complaint overview,\noverdue and hazard alerts
 P --> R : ID lookup request
-R -[norank]-> P : ID, role, email and mobile number
+R -[norank]-> P : ID, name, role, email and mobile number
 P --> M : OTP and Safety Hazard messages
 A -[norank]-> P : report request (date range)
 P --> A : resolution-time report,\nfrequency report
