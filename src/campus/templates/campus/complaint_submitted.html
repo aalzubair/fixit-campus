@@ -1,0 +1,32 @@
+<!-- Confirmation (FR-06): shows the new complaint ID. The "maintenance has been notified" banner for safety hazards is added when notifications (FR-05) exist. -->
+{% extends "campus/app_base.html" %}
+
+{% block title %}Complaint submitted | FixIt Campus{% endblock %}
+{% block nav_submit %} active fw-semibold text-primary{% endblock %}
+
+{% block content %}
+  <div class="card shadow-sm mx-auto text-center" style="max-width: 32rem;">
+    <div class="card-body p-4">
+      <h2 class="h4 fw-bold text-success">&#10003; Complaint submitted</h2>
+      <p class="text-secondary">Maintenance can now see your complaint.</p>
+      <div class="bg-primary-subtle rounded p-3 mb-3">
+        <div class="small text-primary">Your complaint ID</div>
+        <div class="h3 fw-bold text-primary mb-0">{{ complaint.complaint_id }}</div>
+      </div>
+      <dl class="row text-start small mb-4">
+        <dt class="col-4 text-secondary">Category</dt><dd class="col-8 text-end">{{ complaint.get_category_display }}</dd>
+        <dt class="col-4 text-secondary">Location</dt><dd class="col-8 text-end">{{ complaint.location_label }}</dd>
+        <dt class="col-4 text-secondary">Status</dt>
+        <dd class="col-8 text-end">{% include "campus/_status_badge.html" with status=complaint.status label=complaint.get_status_display %}</dd>
+        {% if complaint.is_safety_hazard %}
+          <dt class="col-4 text-secondary">Flag</dt>
+          <dd class="col-8 text-end">{% include "campus/_safety_badge.html" %}</dd>
+        {% endif %}
+      </dl>
+      <div class="d-flex justify-content-center gap-2">
+        <a href="{% url 'submit_complaint' %}" class="btn btn-outline-primary">Submit another</a>
+        <a href="{% url 'my_complaints' %}" class="btn btn-primary">View in My Complaints</a>
+      </div>
+    </div>
+  </div>
+{% endblock %}

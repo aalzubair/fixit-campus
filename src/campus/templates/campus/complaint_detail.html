@@ -1,0 +1,68 @@
+<!-- Complaint details (FR-09, FR-10): only the owner can open this page. Shows the Reopen button while it is allowed, or the "no longer be reopened" message after 7 days. -->
+{% extends "campus/app_base.html" %}
+
+{% block title %}{{ detail.complaint.complaint_id }} | FixIt Campus{% endblock %}
+{% block nav_mine %} active fw-semibold text-primary{% endblock %}
+
+{% block content %}
+  {% with complaint=detail.complaint %}
+    <nav class="small mb-2"><a href="{% url 'my_complaints' %}">My Complaints</a> / {{ complaint.complaint_id }}</nav>
+    {% include "campus/_messages.html" %}
+    <h2 class="h3 fw-bold">
+      {{ complaint.get_category_display }}
+      {% include "campus/_status_badge.html" with status=complaint.status label=complaint.get_status_display %}
+      {% if complaint.is_safety_hazard %}{% include "campus/_safety_badge.html" %}{% endif %}
+    </h2>
+
+    <div class="row g-4 mt-1">
+      <div class="col-lg-8">
+        <div class="card shadow-sm">
+          <div class="card-body p-4">
+            <h3 class="h5 fw-bold mb-3">Complaint details</h3>
+            <dl class="row mb-0">
+              <dt class="col-sm-3 text-secondary">Complaint ID</dt><dd class="col-sm-9">{{ complaint.complaint_id }}</dd>
+              <dt class="col-sm-3 text-secondary">Category</dt><dd class="col-sm-9">{{ complaint.get_category_display }}</dd>
+              <dt class="col-sm-3 text-secondary">Location</dt><dd class="col-sm-9">{{ complaint.location_label }}</dd>
+              <dt class="col-sm-3 text-secondary">Description</dt><dd class="col-sm-9">{{ complaint.description|default:"No description given."|linebreaksbr }}</dd>
+              {% if complaint.photo %}
+                <dt class="col-sm-3 text-secondary">Photo</dt>
+                <dd class="col-sm-9"><img src="{% url 'complaint_photo' complaint.complaint_id %}" alt="Photo of the problem" class="img-fluid rounded border" style="max-height: 20rem;"></dd>
+              {% endif %}
+              {% if complaint.reopen_reason %}
+                <dt class="col-sm-3 text-secondary">Reopen reason</dt><dd class="col-sm-9">{{ complaint.reopen_reason }}</dd>
+              {% endif %}
+              {% if complaint.status == 'rejected' and complaint.rejection_reason %}
+                <dt class="col-sm-3 text-secondary">Rejection reason</dt><dd class="col-sm-9 text-danger">{{ complaint.rejection_reason }}</dd>
+              {% endif %}
+            </dl>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-4">
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <h3 class="h5 fw-bold">Status</h3>
+            <div class="small text-secondary">Current status</div>
+            <div class="mb-2">{% include "campus/_status_badge.html" with status=complaint.status label=complaint.get_status_display %}</div>
+            <div class="small text-secondary">Last status change</div>
+            <div class="mb-3">{{ complaint.status_changed_at|date:"j M Y, H:i" }}</div>
+
+            {% if detail.can_reopen %}
+              <div class="alert alert-warning">
+                <strong>Problem not fixed?</strong>
+                <div class="small mb-2">You can reopen this complaint until {{ detail.reopen_deadline|date:"j M Y" }}.</div>
+                <a href="{% url 'reopen_complaint' complaint.complaint_id %}" class="btn btn-primary w-100">Reopen complaint</a>
+              </div>
+            {% elif detail.reopen_expired %}
+              <div class="alert alert-danger">
+                <div class="mb-2">&#9888; {{ expired_message }}</div>
+                <a href="{% url 'submit_complaint' %}" class="btn btn-primary w-100">Submit a new complaint</a>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endwith %}
+{% endblock %}

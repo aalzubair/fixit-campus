@@ -1,0 +1,120 @@
+<!-- Submit a complaint (FR-06, FR-07, FR-08): the form on the left and the "Already reported?" panel on the right, which is refreshed from the server when the category or location changes. -->
+{% extends "campus/app_base.html" %}
+
+{% block title %}Submit a complaint | FixIt Campus{% endblock %}
+{% block nav_submit %} active fw-semibold text-primary{% endblock %}
+
+{% block content %}
+  <h2 class="h3 fw-bold">Submit a complaint</h2>
+  <p class="text-secondary">Tell maintenance what is wrong and where. It takes about 2 minutes.</p>
+
+  {% if form.errors %}
+    <div class="alert alert-danger" role="alert">&#9888; {{ not_saved_message }}</div>
+  {% endif %}
+
+  <div class="row g-4">
+    <div class="col-lg-8">
+      <div class="card shadow-sm">
+        <div class="card-body p-4">
+          <h3 class="h5 fw-bold mb-3">Complaint details</h3>
+          <form method="post" action="{% url 'submit_complaint' %}" enctype="multipart/form-data" id="complaint-form" novalidate>
+            {% csrf_token %}
+
+            <div class="mb-3">
+              <label for="{{ form.category.id_for_label }}" class="form-label fw-semibold">Category <span class="text-danger">*</span></label>
+              {% include "campus/_select.html" with field=form.category placeholder="Select a category" %}
+              {% include "campus/_errors.html" with errors=form.category.errors %}
+            </div>
+
+            <div class="mb-3">
+              <span class="form-label fw-semibold d-block">Location <span class="text-danger">*</span></span>
+              <div class="row g-2">
+                <div class="col-sm-4">
+                  <label for="{{ form.building.id_for_label }}" class="form-text">Building</label>
+                  {% include "campus/_select.html" with field=form.building placeholder="Select building" invalid=form.location_errors %}
+                </div>
+                <div class="col-sm-4">
+                  <label for="{{ form.floor.id_for_label }}" class="form-text">Floor</label>
+                  {% include "campus/_select.html" with field=form.floor placeholder="Select floor" invalid=form.location_errors %}
+                </div>
+                <div class="col-sm-4">
+                  <label for="{{ form.room_or_area.id_for_label }}" class="form-text">Room or area</label>
+                  {% include "campus/_select.html" with field=form.room_or_area placeholder="Select room or area" invalid=form.location_errors %}
+                </div>
+              </div>
+              {% include "campus/_errors.html" with errors=form.location_errors %}
+            </div>
+
+            <div class="mb-3">
+              <label for="{{ form.description.id_for_label }}" class="form-label fw-semibold">Description</label>
+              <textarea name="description" id="{{ form.description.id_for_label }}" rows="4"
+                        maxlength="1000"
+                        class="form-control{% if form.description.errors %} is-invalid{% endif %}">{{ form.description.value|default:'' }}</textarea>
+              <div class="form-text">Keep it short and specific. Do not include personal details.</div>
+              {% include "campus/_errors.html" with errors=form.description.errors %}
+            </div>
+
+            <div class="mb-3">
+              <label for="{{ form.photo.id_for_label }}" class="form-label fw-semibold">Photo <span class="text-secondary fw-normal">(optional)</span></label>
+              <input type="file" name="photo" id="{{ form.photo.id_for_label }}"
+                     accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+                     class="form-control{% if form.photo.errors %} is-invalid{% endif %}">
+              <div class="form-text">JPG or PNG, up to 5 MB.</div>
+              {% include "campus/_errors.html" with errors=form.photo.errors %}
+            </div>
+
+            <div class="border rounded p-3 mb-4">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="is_safety_hazard" id="is_safety_hazard"
+                       {% if form.is_safety_hazard.value %}checked{% endif %}>
+                <label class="form-check-label fw-semibold text-danger" for="is_safety_hazard">&#9888; Safety Hazard</label>
+              </div>
+              <div class="form-text">Tick this if the problem could hurt someone, such as exposed wiring, broken stairs or a gas smell.</div>
+            </div>
+
+            <div class="d-flex justify-content-end gap-2">
+              <a href="{% url 'home' %}" class="btn btn-outline-secondary">Cancel</a>
+              <button type="submit" class="btn btn-primary">Submit complaint</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h3 class="h5 fw-bold">Already reported?</h3>
+          <div id="similar-panel" data-url="{% url 'similar_complaints' %}"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Why: FR-07 wants the "Already reported?" panel to update as soon as the
+    // category or location changes. The server does the search; this script
+    // only asks for the panel and shows it.
+    (function () {
+      var panel = document.getElementById("similar-panel");
+      var names = ["category", "building", "floor", "room_or_area"];
+      function refresh() {
+        var query = new URLSearchParams();
+        names.forEach(function (name) {
+          query.set(name, document.getElementById("id_" + name).value);
+        });
+        fetch(panel.dataset.url + "?" + query.toString(), {
+          headers: {"X-Requested-With": "XMLHttpRequest"}
+        }).then(function (response) {
+          return response.text();
+        }).then(function (html) {
+          panel.innerHTML = html;
+        });
+      }
+      names.forEach(function (name) {
+        document.getElementById("id_" + name).addEventListener("change", refresh);
+      });
+      refresh();
+    })();
+  </script>
+{% endblock %}

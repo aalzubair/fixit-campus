@@ -1,0 +1,1 @@
+I don't think FR-05 has been implemented yet. Let's save and display the Safety Hazard flag for now and leave a hook for the notification functionality. We can add the confirmation banner once the notification system is available. ,... n approved

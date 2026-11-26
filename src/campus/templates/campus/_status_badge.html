@@ -1,0 +1,2 @@
+<!-- A coloured status label. Include with: status=<the status value>, label=<the text to show>. -->
+<span class="badge rounded-pill {% if status == 'open' %}text-bg-primary{% elif status == 'in_progress' %}text-bg-warning{% elif status == 'resolved' %}text-bg-success{% else %}text-bg-danger{% endif %}">{{ label }}</span>
