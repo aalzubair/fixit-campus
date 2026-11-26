@@ -121,6 +121,10 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 
+# Complaint photos (FR-06) are stored here. They are not served by a public
+# MEDIA_URL: campus.views.complaint_photo_view checks the owner first (NFR-05).
+MEDIA_ROOT = BASE_DIR / "media"
+
 
 # FixIt Campus
 

@@ -1,37 +1,54 @@
 """Business rules for FixIt Campus (Application layer).
 
 This module holds the rules for FR-01 (register with OTP verification),
-FR-02 (log in, account lock, IUB records check) and FR-04 (reset password).
-FR-03 (log out, idle timeout) only changes the session, so it lives in the
-Presentation layer. This module never sees the request, the session or HTML.
+FR-02 (log in, account lock, IUB records check), FR-04 (reset password),
+FR-06 to FR-08 (submit a complaint, find similar ones, follow), FR-09 (track
+complaints), FR-10 (reopen) and FR-21 (browse complaints). FR-03 (log out,
+idle timeout) only changes the session, so it lives in the Presentation layer.
+This module never sees the request, the session or HTML.
 Outside systems are used only through ``records.py`` (university records)
 and ``delivery.py`` (sending the OTP).
 """
 
 import secrets
 import string
+from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import datetime, timedelta
+from pathlib import PurePath
 
 from django.contrib.auth.hashers import check_password, make_password
+from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
+from django.db.models.fields.files import FieldFile
 from django.utils import timezone
 
 from campus.constants import (
     ACCOUNT_ACTIVE,
     ACCOUNT_LOCK_MINUTES,
     ACCOUNT_PENDING_ACTIVATION,
+    BROWSABLE_STATUSES,
+    COMPLAINT_ID_NUMBER_WIDTH,
+    COMPLAINT_ID_PREFIX_FORMAT,
+    COMPLAINT_OPEN,
+    COMPLAINT_RESOLVED,
     LOGIN_MAX_FAILED_ATTEMPTS,
     MEMBER_NAME_MAX_LENGTH,
     MSG_ACCOUNT_LOCKED,
     MSG_ACCOUNT_NO_LONGER_ACTIVE,
     MSG_ALREADY_REGISTERED,
+    MSG_CANNOT_FOLLOW_OWN,
+    MSG_COMPLAINT_NOT_ALLOWED,
     MSG_ID_NOT_FOUND,
     MSG_INVALID_LOGIN,
     MSG_NO_CONTACT_DETAILS,
+    MSG_ONLY_BROWSABLE_CAN_FOLLOW,
+    MSG_ONLY_RESOLVED_CAN_REOPEN,
     MSG_OTP_EXPIRED,
     MSG_OTP_INCORRECT,
     MSG_OTP_NO_LONGER_VALID,
     MSG_PASSWORD_TOO_SHORT,
+    MSG_REOPEN_EXPIRED,
     MSG_TOO_MANY_REQUESTS,
     OTP_EXPIRED,
     OTP_INVALID,
@@ -45,9 +62,10 @@ from campus.constants import (
     OTP_USED,
     OTP_VALID,
     PASSWORD_MIN_LENGTH,
+    REOPEN_WINDOW_DAYS,
 )
 from campus.delivery import get_otp_sender
-from campus.models import Otp, User
+from campus.models import Complaint, Follow, Otp, User
 from campus.records import UniversityMember, get_records_client
 
 
@@ -66,6 +84,101 @@ class ServiceError(Exception):
         """
         super().__init__(message)
         self.message = message
+
+
+@dataclass(frozen=True)
+class ComplaintDraft:
+    """The checked input of the complaint form (FR-06).
+
+    Attributes:
+        category: A category value from ``CATEGORY_CHOICES``.
+        building: The building of the location.
+        floor: The floor, or an empty string for a place without a floor.
+        room_or_area: The room or area of the location.
+        description: A short description, may be empty.
+        photo: The uploaded photo, or None.
+        is_safety_hazard: True if the user ticked the Safety Hazard box (FR-08).
+    """
+
+    category: str
+    building: str
+    floor: str
+    room_or_area: str
+    description: str
+    photo: UploadedFile | None
+    is_safety_hazard: bool
+
+
+@dataclass(frozen=True)
+class BrowseFilters:
+    """The filters of Existing Complaints (FR-21); an empty value means "all"."""
+
+    building: str = ""
+    category: str = ""
+    status: str = ""
+
+
+@dataclass(frozen=True)
+class ComplaintSummary:
+    """The only facts of a complaint that other users may see (FR-07, FR-21).
+
+    It holds category, location, status and dates. Reporter name, description
+    and photo are left out here, so no page can show them by mistake.
+    """
+
+    complaint_id: str
+    category: str
+    location: str
+    status: str
+    status_label: str
+    created_at: datetime
+    status_changed_at: datetime
+
+
+@dataclass(frozen=True)
+class ListedComplaint:
+    """One row of a complaint list: the summary and how the user relates to it.
+
+    Attributes:
+        summary: What the user may see of the complaint.
+        is_following: True if the user follows the complaint.
+        is_own: True if the user submitted the complaint.
+    """
+
+    summary: ComplaintSummary
+    is_following: bool
+    is_own: bool
+
+
+@dataclass(frozen=True)
+class MyComplaints:
+    """The two lists of the My Complaints page (FR-09).
+
+    Attributes:
+        own: Complaints the user submitted, newest status change first.
+        following: Complaints of other users that the user follows.
+    """
+
+    own: list[Complaint]
+    following: list[ListedComplaint]
+
+
+@dataclass(frozen=True)
+class ComplaintDetail:
+    """A user's own complaint and what they may do with it (FR-09, FR-10).
+
+    Attributes:
+        complaint: The complaint.
+        can_reopen: True if it is Resolved and still inside the 7-day window.
+        reopen_expired: True if it is Resolved but the window has passed.
+        reopen_deadline: The last moment it can be reopened, or None if it
+            is not Resolved.
+    """
+
+    complaint: Complaint
+    can_reopen: bool
+    reopen_expired: bool
+    reopen_deadline: datetime | None
 
 
 # --- Public service functions (called by views) ---
@@ -240,6 +353,215 @@ def reset_password(id_number: str, code: str, new_password: str) -> None:
         otp.save()
         user.set_password(new_password)
         user.save()
+
+
+def submit_complaint(user: User, draft: ComplaintDraft) -> Complaint:
+    """Save a new Open complaint with a unique ID (FR-06).
+
+    The complaint is saved in one transaction, so a failure leaves nothing
+    half saved (NFR-10).
+
+    Args:
+        user: The logged-in complainant.
+        draft: The checked form input.
+
+    Returns:
+        The saved complaint.
+    """
+    now = timezone.now()
+    with transaction.atomic():
+        complaint_id = _next_complaint_id(now)
+        if draft.photo is not None:
+            # Store the photo under the complaint ID, not the user's file name.
+            draft.photo.name = complaint_id + PurePath(draft.photo.name).suffix.lower()
+        complaint = Complaint.objects.create(
+            complaint_id=complaint_id,
+            submitted_by=user,
+            category=draft.category,
+            building=draft.building,
+            floor=draft.floor,
+            room_or_area=draft.room_or_area,
+            description=draft.description,
+            photo=draft.photo or "",
+            is_safety_hazard=draft.is_safety_hazard,
+            status=COMPLAINT_OPEN,
+            created_at=now,
+            opened_at=now,
+            status_changed_at=now,
+        )
+    # HOOK (FR-08, needs FR-05): when ``complaint.is_safety_hazard`` is True,
+    # notify maintenance staff and supervisors here, once the notification
+    # feature exists. Until then the flag is only saved and shown.
+    return complaint
+
+
+def get_similar_complaints(
+    user: User, category: str, building: str, floor: str, room_or_area: str
+) -> list[ListedComplaint]:
+    """Find Open or In Progress complaints of the same category and place (FR-07).
+
+    Args:
+        user: The logged-in complainant, used to mark followed complaints.
+        category: A category value.
+        building: The building.
+        floor: The floor, or an empty string.
+        room_or_area: The room or area.
+
+    Returns:
+        The matching complaints, newest first, without private details.
+    """
+    complaints = Complaint.objects.filter(
+        status__in=BROWSABLE_STATUSES,
+        category=category,
+        building=building,
+        floor=floor,
+        room_or_area=room_or_area,
+    )
+    return _to_listed(user, complaints)
+
+
+def browse_complaints(user: User, filters: BrowseFilters) -> list[ListedComplaint]:
+    """List Open and In Progress complaints, narrowed by filters (FR-21).
+
+    Args:
+        user: The logged-in complainant, used to mark followed complaints.
+        filters: Building, category and status; empty means "all".
+
+    Returns:
+        The matching complaints, newest first, without private details.
+    """
+    complaints = Complaint.objects.filter(status__in=BROWSABLE_STATUSES)
+    if filters.building:
+        complaints = complaints.filter(building=filters.building)
+    if filters.category:
+        complaints = complaints.filter(category=filters.category)
+    if filters.status:
+        complaints = complaints.filter(status=filters.status)
+    return _to_listed(user, complaints)
+
+
+def follow_complaint(user: User, complaint_id: str) -> None:
+    """Follow another user's Open or In Progress complaint (FR-07).
+
+    Following a complaint that is already followed changes nothing.
+
+    Args:
+        user: The logged-in complainant.
+        complaint_id: The complaint ID, for example ``CMP-2026-00001``.
+
+    Raises:
+        ServiceError: If the complaint does not exist, is the user's own, or
+            is not Open or In Progress.
+    """
+    complaint = Complaint.objects.filter(complaint_id=complaint_id).first()
+    if complaint is None:
+        raise ServiceError(MSG_COMPLAINT_NOT_ALLOWED)
+    if complaint.submitted_by_id == user.pk:
+        raise ServiceError(MSG_CANNOT_FOLLOW_OWN)
+    if complaint.status not in BROWSABLE_STATUSES:
+        raise ServiceError(MSG_ONLY_BROWSABLE_CAN_FOLLOW)
+    Follow.objects.get_or_create(
+        user=user, complaint=complaint, defaults={"created_at": timezone.now()}
+    )
+
+
+def unfollow_complaint(user: User, complaint_id: str) -> None:
+    """Stop following a complaint; nothing happens if it was not followed.
+
+    Args:
+        user: The logged-in complainant.
+        complaint_id: The complaint ID.
+    """
+    Follow.objects.filter(user=user, complaint__complaint_id=complaint_id).delete()
+
+
+def list_my_complaints(user: User) -> MyComplaints:
+    """Collect the complaints a user submitted and the ones they follow (FR-09).
+
+    Args:
+        user: The logged-in complainant.
+
+    Returns:
+        The two lists, each with the newest status change first.
+    """
+    own = user.submitted_complaints.order_by("-status_changed_at", "-id")
+    following = user.followed_complaints.order_by("-status_changed_at", "-id")
+    return MyComplaints(own=list(own), following=_to_listed(user, following))
+
+
+def get_complaint_detail(user: User, complaint_id: str) -> ComplaintDetail:
+    """Open one of the user's own complaints (FR-09).
+
+    Args:
+        user: The logged-in complainant.
+        complaint_id: The complaint ID.
+
+    Returns:
+        The complaint and whether it can still be reopened.
+
+    Raises:
+        ServiceError: If the complaint does not exist or is not the user's.
+    """
+    complaint = _get_own_complaint(user, complaint_id)
+    deadline = _reopen_deadline(complaint)
+    now = timezone.now()
+    return ComplaintDetail(
+        complaint=complaint,
+        can_reopen=deadline is not None and now <= deadline,
+        reopen_expired=deadline is not None and now > deadline,
+        reopen_deadline=deadline,
+    )
+
+
+def get_complaint_photo(user: User, complaint_id: str) -> FieldFile | None:
+    """Return the photo of one of the user's own complaints (NFR-05).
+
+    Photos are only given out here, after the owner check, never by a public
+    media URL.
+
+    Args:
+        user: The logged-in complainant.
+        complaint_id: The complaint ID.
+
+    Returns:
+        The stored photo, or None if the complaint has no photo.
+
+    Raises:
+        ServiceError: If the complaint does not exist or is not the user's.
+    """
+    complaint = _get_own_complaint(user, complaint_id)
+    return complaint.photo if complaint.photo else None
+
+
+def reopen_complaint(user: User, complaint_id: str, reason: str) -> None:
+    """Reopen a Resolved complaint within 7 days of being resolved (FR-10).
+
+    The complaint goes back to Open, the previous assignment is cleared and
+    the reason is saved for maintenance staff and supervisors.
+
+    Args:
+        user: The logged-in complainant.
+        complaint_id: The complaint ID.
+        reason: The checked, non-empty reason.
+
+    Raises:
+        ServiceError: If the complaint is not the user's, is not Resolved, or
+            was resolved more than 7 days ago.
+    """
+    now = timezone.now()
+    with transaction.atomic():
+        complaint = _get_own_complaint(user, complaint_id)
+        if complaint.status != COMPLAINT_RESOLVED:
+            raise ServiceError(MSG_ONLY_RESOLVED_CAN_REOPEN)
+        deadline = _reopen_deadline(complaint)
+        if deadline is None or now > deadline:
+            raise ServiceError(MSG_REOPEN_EXPIRED)
+        complaint.status = COMPLAINT_OPEN
+        complaint.assigned_to = None
+        complaint.reopen_reason = reason
+        complaint.opened_at = now
+        complaint.status_changed_at = now
+        complaint.save()
 
 
 # --- Helpers: users and university records ---
@@ -522,3 +844,96 @@ def _record_wrong_attempt(otp: Otp) -> str:
         return MSG_OTP_NO_LONGER_VALID
     otp.save()
     return MSG_OTP_INCORRECT
+
+
+# --- Helpers: complaints ---
+
+
+def _next_complaint_id(now: datetime) -> str:
+    """Build the next complaint ID of the year, such as ``CMP-2026-00007``.
+
+    Call this inside the transaction that saves the complaint. The unique
+    column is the final guard against two equal IDs.
+
+    Args:
+        now: The current time; its year is part of the ID.
+
+    Returns:
+        An ID that no saved complaint has.
+    """
+    prefix = COMPLAINT_ID_PREFIX_FORMAT.format(year=now.year)
+    last_id = (
+        Complaint.objects.filter(complaint_id__startswith=prefix)
+        .order_by("-complaint_id")
+        .values_list("complaint_id", flat=True)
+        .first()
+    )
+    number = int(last_id.removeprefix(prefix)) + 1 if last_id else 1
+    return prefix + str(number).zfill(COMPLAINT_ID_NUMBER_WIDTH)
+
+
+def _get_own_complaint(user: User, complaint_id: str) -> Complaint:
+    """Find a complaint that belongs to the user.
+
+    A missing complaint and another user's complaint give the same error, so
+    the answer does not reveal which IDs exist (FR-09, NFR-05).
+
+    Args:
+        user: The logged-in complainant.
+        complaint_id: The complaint ID.
+
+    Returns:
+        The complaint.
+
+    Raises:
+        ServiceError: If there is no such complaint of this user.
+    """
+    complaint = Complaint.objects.filter(
+        complaint_id=complaint_id, submitted_by=user
+    ).first()
+    if complaint is None:
+        raise ServiceError(MSG_COMPLAINT_NOT_ALLOWED)
+    return complaint
+
+
+def _reopen_deadline(complaint: Complaint) -> datetime | None:
+    """Work out the last moment a Resolved complaint can be reopened.
+
+    Args:
+        complaint: Any complaint.
+
+    Returns:
+        Seven days after it was resolved, or None if it is not Resolved.
+    """
+    if complaint.status != COMPLAINT_RESOLVED or complaint.resolved_at is None:
+        return None
+    return complaint.resolved_at + timedelta(days=REOPEN_WINDOW_DAYS)
+
+
+def _to_listed(user: User, complaints: Iterable[Complaint]) -> list[ListedComplaint]:
+    """Turn complaints into the limited view that other users may see.
+
+    Args:
+        user: The logged-in complainant, used for the follow and own marks.
+        complaints: The complaints to show.
+
+    Returns:
+        One ``ListedComplaint`` per complaint, in the same order.
+    """
+    followed_ids = set(user.followed_complaints.values_list("pk", flat=True))
+    return [
+        ListedComplaint(
+            summary=ComplaintSummary(
+                complaint_id=complaint.complaint_id,
+                category=complaint.get_category_display(),
+                location=complaint.location_label(),
+                status=complaint.status,
+                status_label=complaint.get_status_display(),
+                created_at=complaint.created_at,
+                status_changed_at=complaint.status_changed_at,
+            ),
+            is_following=complaint.pk in followed_ids,
+            is_own=complaint.submitted_by_id == user.pk,
+        )
+        for complaint in complaints
+    ]
