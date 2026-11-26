@@ -20,7 +20,7 @@ APP_PACKAGE = "campus"
 # because Django routes URLs to views; both are in the Presentation layer.
 ALLOWED_IMPORTS = {
     "views": frozenset({"forms", "services", "constants"}),
-    "urls": frozenset({"views", "forms", "services", "constants"}),
+    "urls": frozenset({"views", "constants"}),
     "middleware": frozenset({"constants"}),
     "forms": frozenset({"constants"}),
     "services": frozenset({"models", "delivery", "records", "constants"}),
