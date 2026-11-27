@@ -8,6 +8,7 @@ from campus.constants import (
     MSG_ACCEPT_FIRST,
     MSG_COMPLAINT_ALREADY_ASSIGNED,
     MSG_COMPLAINT_NOT_FOUND,
+    MSG_NOT_AUTHORIZED,
     MSG_ONLY_ACTIVE_CAN_REJECT,
     MSG_ONLY_ASSIGNED_CAN_REJECT,
     MSG_ONLY_ASSIGNED_CAN_RESOLVE,
@@ -130,6 +131,17 @@ class AcceptComplaintTests(StaffTestCase):
         with self.assertRaisesMessage(ServiceError, MSG_COMPLAINT_NOT_FOUND):
             accept_complaint(self.staff, UNKNOWN_COMPLAINT_ID)
 
+    def test_only_maintenance_staff_can_accept(self) -> None:
+        """Supervisors and complainant roles are refused and nothing changes."""
+        complaint = self.make_complaint(self.student)
+        for user in (self.supervisor, *self.complainants):
+            with self.subTest(role=user.role):
+                with self.assertRaisesMessage(ServiceError, MSG_NOT_AUTHORIZED):
+                    accept_complaint(user, complaint.complaint_id)
+        complaint.refresh_from_db()
+        self.assertEqual(complaint.status, COMPLAINT_OPEN)
+        self.assertIsNone(complaint.assigned_to)
+
 
 class ResolveComplaintTests(StaffTestCase):
     """FR-13: marking a complaint as Resolved."""
@@ -176,6 +188,16 @@ class ResolveComplaintTests(StaffTestCase):
                     ServiceError, MSG_ONLY_IN_PROGRESS_CAN_RESOLVE
                 ):
                     resolve_complaint(self.supervisor, complaint.complaint_id)
+
+    def test_complainant_roles_cannot_resolve(self) -> None:
+        """Students, faculty and administrators are refused and nothing changes."""
+        complaint = self.make_in_progress(self.staff)
+        for user in self.complainants:
+            with self.subTest(role=user.role):
+                with self.assertRaisesMessage(ServiceError, MSG_NOT_AUTHORIZED):
+                    resolve_complaint(user, complaint.complaint_id)
+        complaint.refresh_from_db()
+        self.assertEqual(complaint.status, COMPLAINT_IN_PROGRESS)
 
 
 class RejectComplaintTests(StaffTestCase):

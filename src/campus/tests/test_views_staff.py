@@ -5,6 +5,7 @@ from http import HTTPStatus
 from django.urls import reverse
 
 from campus.constants import (
+    COMPLAINT_IN_PROGRESS,
     COMPLAINT_REJECTED,
     MSG_ACCEPT_FIRST,
     MSG_COMPLAINT_ACCEPTED,
@@ -119,6 +120,30 @@ class StaffDetailViewTests(StaffTestCase):
         self.assertContains(response, earlier.complaint_id)
         self.assertNotContains(response, MSG_NO_COMPLAINT_HISTORY)
 
+    def test_staff_names_are_shown_instead_of_id_numbers(self) -> None:
+        """Assigned to and Rejected by show the member's name (CR-03)."""
+        self.assertTrue(self.staff.get_full_name())
+        in_progress = self.make_in_progress(self.staff)
+        rejected = self.make_complaint(self.student)
+        self.client_for(self.supervisor).post(
+            complaint_url(URL_NAME_REJECT_COMPLAINT, rejected.complaint_id),
+            {"reason": "Not a maintenance issue."},
+        )
+        client = self.client_for(self.other_staff)
+        pages = (
+            reverse(URL_NAME_STAFF_COMPLAINTS),
+            complaint_url(URL_NAME_STAFF_COMPLAINT_DETAIL, in_progress.complaint_id),
+        )
+        for url in pages:
+            with self.subTest(url=url):
+                response = client.get(url)
+                self.assertContains(response, self.staff.get_full_name())
+                self.assertNotContains(response, self.staff.username)
+        rejected_page = client.get(
+            complaint_url(URL_NAME_STAFF_COMPLAINT_DETAIL, rejected.complaint_id)
+        )
+        self.assertContains(rejected_page, self.supervisor.get_full_name())
+
     def test_unknown_complaint_gives_404(self) -> None:
         """A wrong complaint ID is "not found"."""
         url = complaint_url(URL_NAME_STAFF_COMPLAINT_DETAIL, UNKNOWN_COMPLAINT_ID)
@@ -170,6 +195,32 @@ class StaffActionViewTests(StaffTestCase):
             with self.subTest(message=message):
                 url = complaint_url(URL_NAME_RESOLVE_COMPLAINT, complaint.complaint_id)
                 self.assertContains(client.post(url, follow=True), message)
+
+    def test_complainant_roles_get_403_on_accept_and_resolve(self) -> None:
+        """Students, faculty and administrators are refused and nothing changes."""
+        complaint = self.make_in_progress(self.staff)
+        for name in (URL_NAME_ACCEPT_COMPLAINT, URL_NAME_RESOLVE_COMPLAINT):
+            url = complaint_url(name, complaint.complaint_id)
+            for user in self.complainants:
+                with self.subTest(action=name, role=user.role):
+                    response = self.client_for(user).post(url)
+                    self.assertContains(
+                        response, MSG_NOT_AUTHORIZED, status_code=HTTPStatus.FORBIDDEN
+                    )
+        complaint.refresh_from_db()
+        self.assertEqual(complaint.status, COMPLAINT_IN_PROGRESS)
+
+    def test_anonymous_user_posting_goes_to_login(self) -> None:
+        """Without logging in, accept and resolve redirect to the login page."""
+        complaint = self.make_complaint(self.student)
+        for name in (URL_NAME_ACCEPT_COMPLAINT, URL_NAME_RESOLVE_COMPLAINT):
+            url = complaint_url(name, complaint.complaint_id)
+            with self.subTest(action=name):
+                self.assertRedirects(
+                    self.client.post(url),
+                    f"{reverse(URL_NAME_LOGIN)}?next={url}",
+                    fetch_redirect_response=False,
+                )
 
     def test_unknown_complaint_action_gives_404(self) -> None:
         """Acting on a wrong complaint ID is "not found"."""

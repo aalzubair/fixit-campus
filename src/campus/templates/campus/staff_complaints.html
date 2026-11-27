@@ -52,7 +52,7 @@
                 <td>{{ complaint.location_label }}</td>
                 <td>{% include "campus/_status_badge.html" with status=complaint.status label=complaint.get_status_display %}</td>
                 <td>{% if complaint.is_safety_hazard %}{% include "campus/_safety_badge.html" %}{% endif %}</td>
-                <td>{% if complaint.assigned_to %}{% if complaint.assigned_to == user %}{{ complaint.assigned_to.username }} (you){% else %}{{ complaint.assigned_to.username }}{% endif %}{% else %}<span class="text-secondary">Not assigned</span>{% endif %}</td>
+                <td>{% if complaint.assigned_to %}{{ complaint.assigned_to.get_full_name|default:complaint.assigned_to.username }}{% if complaint.assigned_to == user %} (you){% endif %}{% else %}<span class="text-secondary">Not assigned</span>{% endif %}</td>
                 <td>{{ complaint.created_at|date:"j M Y" }}</td>
                 <td class="text-end text-nowrap">
                   {% if can_accept and complaint.status == "open" and not complaint.assigned_to %}

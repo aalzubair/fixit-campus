@@ -49,6 +49,7 @@ from campus.constants import (
     MSG_ID_NOT_FOUND,
     MSG_INVALID_LOGIN,
     MSG_NO_CONTACT_DETAILS,
+    MSG_NOT_AUTHORIZED,
     MSG_ONLY_ACTIVE_CAN_REJECT,
     MSG_ONLY_ASSIGNED_CAN_REJECT,
     MSG_ONLY_ASSIGNED_CAN_RESOLVE,
@@ -690,17 +691,23 @@ def get_staff_complaint_detail(user: User, complaint_id: str) -> StaffComplaintD
 def accept_complaint(user: User, complaint_id: str) -> None:
     """Accept an Open complaint: it becomes In Progress and the user's (FR-12).
 
-    The row is locked while it changes, so two staff members who press
-    Accept at the same moment cannot both get the complaint.
+    The change runs in one transaction with ``select_for_update``, so two
+    staff members who press Accept at the same moment cannot both get the
+    complaint. On databases that support row locks (for example PostgreSQL)
+    the row is locked; SQLite has no row locks and serialises the writes
+    instead, which gives the same result for this project.
 
     Args:
         user: The logged-in maintenance staff member.
         complaint_id: The complaint ID.
 
     Raises:
-        ServiceError: If the complaint does not exist, is Resolved or
-            Rejected, or already belongs to another staff member.
+        ServiceError: If the user is not maintenance staff, or the complaint
+            does not exist, is Resolved or Rejected, or already belongs to
+            another staff member.
     """
+    if user.role != ROLE_MAINTENANCE_STAFF:
+        raise ServiceError(MSG_NOT_AUTHORIZED)
     now = timezone.now()
     with transaction.atomic():
         complaint = _get_complaint_for_update(complaint_id)
@@ -723,9 +730,12 @@ def resolve_complaint(user: User, complaint_id: str) -> None:
         complaint_id: The complaint ID.
 
     Raises:
-        ServiceError: If the complaint does not exist, is not In Progress, or
-            belongs to another staff member and the user is not a supervisor.
+        ServiceError: If the user is not maintenance staff or a supervisor,
+            or the complaint does not exist, is not In Progress, or belongs to
+            another staff member and the user is not a supervisor.
     """
+    if user.role not in STAFF_ROLES:
+        raise ServiceError(MSG_NOT_AUTHORIZED)
     now = timezone.now()
     with transaction.atomic():
         complaint = _get_complaint_for_update(complaint_id)

@@ -22,7 +22,7 @@
               <dt class="col-sm-3 text-secondary">Description</dt><dd class="col-sm-9">{{ complaint.description|default:"No description given."|linebreaksbr }}</dd>
               <dt class="col-sm-3 text-secondary">Submitted</dt><dd class="col-sm-9">{{ complaint.created_at|date:"j M Y, g:i A" }}</dd>
               <dt class="col-sm-3 text-secondary">Assigned to</dt>
-              <dd class="col-sm-9">{% if complaint.assigned_to %}{{ complaint.assigned_to.username }}{% if complaint.assigned_to == user %} (you){% endif %}{% else %}Not assigned{% endif %}</dd>
+              <dd class="col-sm-9">{% if complaint.assigned_to %}{{ complaint.assigned_to.get_full_name|default:complaint.assigned_to.username }}{% if complaint.assigned_to == user %} (you){% endif %}{% else %}Not assigned{% endif %}</dd>
               {% if complaint.reopen_reason and complaint.status == "open" %}
                 <dt class="col-sm-3 text-secondary">Reopen reason</dt><dd class="col-sm-9">{{ complaint.reopen_reason }}</dd>
               {% endif %}
@@ -31,7 +31,7 @@
               {% endif %}
               {% if complaint.status == "rejected" %}
                 <dt class="col-sm-3 text-secondary">Rejected</dt>
-                <dd class="col-sm-9">{{ complaint.rejected_at|date:"j M Y, g:i A" }}{% if complaint.rejected_by %} by {{ complaint.rejected_by.username }}{% endif %}</dd>
+                <dd class="col-sm-9">{{ complaint.rejected_at|date:"j M Y, g:i A" }}{% if complaint.rejected_by %} by {{ complaint.rejected_by.get_full_name|default:complaint.rejected_by.username }}{% endif %}</dd>
                 <dt class="col-sm-3 text-secondary">Reason</dt><dd class="col-sm-9">{{ complaint.rejection_reason }}</dd>
               {% endif %}
             </dl>
