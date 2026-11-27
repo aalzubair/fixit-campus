@@ -4,6 +4,7 @@ from django.urls import path
 
 from campus import views
 from campus.constants import (
+    URL_NAME_ACCEPT_COMPLAINT,
     URL_NAME_COMPLAINT_DETAIL,
     URL_NAME_COMPLAINT_PHOTO,
     URL_NAME_COMPLAINT_SUBMITTED,
@@ -20,8 +21,12 @@ from campus.constants import (
     URL_NAME_REGISTER_DONE,
     URL_NAME_REGISTER_NEW_OTP,
     URL_NAME_REGISTER_VERIFY,
+    URL_NAME_REJECT_COMPLAINT,
     URL_NAME_REOPEN_COMPLAINT,
+    URL_NAME_RESOLVE_COMPLAINT,
     URL_NAME_SIMILAR_COMPLAINTS,
+    URL_NAME_STAFF_COMPLAINTS,
+    URL_NAME_STAFF_COMPLAINT_DETAIL,
     URL_NAME_SUBMIT_COMPLAINT,
     URL_NAME_UNFOLLOW_COMPLAINT,
 )
@@ -95,5 +100,30 @@ urlpatterns = [
         "complaints/<str:complaint_id>/reopen/",
         views.reopen_complaint_view,
         name=URL_NAME_REOPEN_COMPLAINT,
+    ),
+    # F5 staff pages live under "staff/" so they never clash with the
+    # complainant pages above.
+    path(
+        "staff/complaints/", views.staff_complaints_view, name=URL_NAME_STAFF_COMPLAINTS
+    ),
+    path(
+        "staff/complaints/<str:complaint_id>/",
+        views.staff_complaint_detail_view,
+        name=URL_NAME_STAFF_COMPLAINT_DETAIL,
+    ),
+    path(
+        "staff/complaints/<str:complaint_id>/accept/",
+        views.accept_complaint_view,
+        name=URL_NAME_ACCEPT_COMPLAINT,
+    ),
+    path(
+        "staff/complaints/<str:complaint_id>/resolve/",
+        views.resolve_complaint_view,
+        name=URL_NAME_RESOLVE_COMPLAINT,
+    ),
+    path(
+        "staff/complaints/<str:complaint_id>/reject/",
+        views.reject_complaint_view,
+        name=URL_NAME_REJECT_COMPLAINT,
     ),
 ]

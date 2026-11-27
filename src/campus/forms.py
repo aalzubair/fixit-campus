@@ -231,3 +231,18 @@ class BrowseFilterForm(forms.Form):
     building = forms.ChoiceField(choices=BUILDING_CHOICES, required=False)
     category = forms.ChoiceField(choices=CATEGORY_CHOICES, required=False)
     status = forms.ChoiceField(choices=BROWSE_STATUS_CHOICES, required=False)
+
+
+class StaffFilterForm(BrowseFilterForm):
+    """The filters of the staff complaint list (FR-11).
+
+    It adds every status and a Safety Hazard box to the Existing Complaints
+    filters. Every field is optional; an empty field means "all".
+    """
+
+    status = forms.ChoiceField(choices=COMPLAINT_STATUS_CHOICES, required=False)
+    safety_hazard_only = forms.BooleanField(required=False)
+
+
+class RejectForm(ReopenForm):
+    """The reject form: the same required short reason as reopening (FR-20)."""

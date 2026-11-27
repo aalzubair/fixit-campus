@@ -36,6 +36,8 @@ ROLE_MAX_LENGTH = 20
 MEMBER_NAME_MAX_LENGTH = 150
 # The roles that may submit, browse, follow and reopen complaints (FR-06).
 COMPLAINANT_ROLES = (ROLE_STUDENT, ROLE_FACULTY, ROLE_ADMINISTRATOR)
+# Roles that handle complaints: the staff list, Resolve and Reject (FR-11 to FR-20).
+STAFF_ROLES = (ROLE_MAINTENANCE_STAFF, ROLE_SUPERVISOR)
 
 # --- Account statuses ---
 # "Locked" is not a status: it is derived from ``User.locked_until`` so the
@@ -88,6 +90,8 @@ COMPLAINT_STATUS_CHOICES = (
 COMPLAINT_STATUS_MAX_LENGTH = 12
 # Complaints that other users may see in the lists and follow (FR-07, FR-21).
 BROWSABLE_STATUSES = (COMPLAINT_OPEN, COMPLAINT_IN_PROGRESS)
+# Staff can reject only a complaint that is still being handled (FR-20).
+REJECTABLE_STATUSES = (COMPLAINT_OPEN, COMPLAINT_IN_PROGRESS)
 
 # --- Complaint categories (the value stored, the label shown) ---
 # Taken from the UI design. The SRS (Assumption 4) says the university supplies
@@ -185,6 +189,11 @@ URL_NAME_COMPLAINT_PHOTO = "complaint_photo"
 URL_NAME_FOLLOW_COMPLAINT = "follow_complaint"
 URL_NAME_UNFOLLOW_COMPLAINT = "unfollow_complaint"
 URL_NAME_REOPEN_COMPLAINT = "reopen_complaint"
+URL_NAME_STAFF_COMPLAINTS = "staff_complaints"
+URL_NAME_STAFF_COMPLAINT_DETAIL = "staff_complaint_detail"
+URL_NAME_ACCEPT_COMPLAINT = "accept_complaint"
+URL_NAME_RESOLVE_COMPLAINT = "resolve_complaint"
+URL_NAME_REJECT_COMPLAINT = "reject_complaint"
 TAB_MY_COMPLAINTS = "mine"
 TAB_FOLLOWING = "following"
 TEMPLATE_REGISTER = "campus/register.html"
@@ -202,6 +211,9 @@ TEMPLATE_EXISTING_COMPLAINTS = "campus/existing_complaints.html"
 TEMPLATE_MY_COMPLAINTS = "campus/my_complaints.html"
 TEMPLATE_COMPLAINT_DETAIL = "campus/complaint_detail.html"
 TEMPLATE_REOPEN_COMPLAINT = "campus/complaint_reopen.html"
+TEMPLATE_STAFF_COMPLAINTS = "campus/staff_complaints.html"
+TEMPLATE_STAFF_COMPLAINT_DETAIL = "campus/staff_complaint_detail.html"
+TEMPLATE_REJECT_COMPLAINT = "campus/complaint_reject.html"
 
 # --- Home page placeholder for each role: (role, heading, short text) ---
 # Real home pages come with later features.
@@ -301,3 +313,29 @@ MSG_FOLLOWING_STOPPED = "You stopped following this complaint."
 MSG_CANNOT_FOLLOW_OWN = "You cannot follow your own complaint."
 MSG_ONLY_BROWSABLE_CAN_FOLLOW = "Only Open or In Progress complaints can be followed."
 MSG_COMPLAINT_REOPENED = "Your complaint was reopened."
+
+# --- Messages: staff actions (F5, FR-11 to FR-14 and FR-20) ---
+MSG_COMPLAINT_ALREADY_ASSIGNED = "Complaint already assigned"
+MSG_ONLY_OPEN_CAN_ACCEPT = "Only Open complaints can be accepted."
+# FR-13 Confirmation 3 gives no exact text, only "asks me to accept it first".
+MSG_ACCEPT_FIRST = "Please accept this complaint first."
+MSG_ONLY_ASSIGNED_CAN_RESOLVE = (
+    "Only the assigned staff member or a supervisor can resolve this complaint."
+)
+MSG_ONLY_IN_PROGRESS_CAN_RESOLVE = (
+    "Only In Progress complaints can be marked as Resolved."
+)
+MSG_ONLY_ASSIGNED_CAN_REJECT = (
+    "Only the assigned staff member or a supervisor can reject this complaint."
+)
+MSG_ONLY_ACTIVE_CAN_REJECT = "Only Open or In Progress complaints can be rejected."
+MSG_ONLY_STAFF_CAN_REJECT = (
+    "Only maintenance staff and supervisors can reject complaints."
+)
+MSG_NO_COMPLAINT_HISTORY = "No complaint history available."
+MSG_COMPLAINT_NOT_FOUND = "Complaint not found."
+MSG_COMPLAINT_ACCEPTED = (
+    "Complaint accepted. It is now In Progress and assigned to you."
+)
+MSG_COMPLAINT_RESOLVED = "Complaint marked as Resolved."
+MSG_COMPLAINT_REJECTED = "Complaint rejected."
