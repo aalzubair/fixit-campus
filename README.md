@@ -18,9 +18,9 @@ Course teacher: Dr. Md Musfique Anwar.
 | F3 | Submit a complaint | FR-06 to FR-08 | Jannatun | Done |
 | F4 | Track, reopen, browse complaints | FR-09, FR-10, FR-21 | Jannatun | Done |
 | F5 | Staff actions (filter, accept, resolve, location history, reject) | FR-11 to FR-14, FR-20 | Puja | Done |
-| F6 | Supervisor (overdue, monitor, assign) | FR-15 to FR-17 | Puja | UI designed, code in progress |
-| F7 | Reports | FR-18, FR-19 | Asiful | UI in progress, code not started |
-| F8 | Notifications | FR-05 | Asiful | UI in progress, code not started |
+| F6 | Supervisor (overdue, monitor, assign) | FR-15 to FR-17 | Puja | Not in v1.0.0 (UI designed) |
+| F7 | Reports | FR-18, FR-19 | Asiful | Not in v1.0.0 |
+| F8 | Notifications | FR-05 | Asiful | Not in v1.0.0 |
 
 What is missing or only partly done is listed on the Wiki page [Risks and Limitations](https://github.com/aalzubair/fixit-campus/wiki/Risks-and-Limitations).
 
@@ -50,6 +50,8 @@ All Django commands are run from the `src/` folder.
 ## Try it
 
 Registration is limited to people listed in the university records. In this version the records come from the file `src/campus/data/iub_records.json`, so you can register with one of these ID numbers:
+
+**Development only:** the demo ID numbers, the OTP printed in the terminal and the JSON records file are for development and testing. A real deployment needs a real university records system and email or SMS delivery (see [Risks and Limitations](https://github.com/aalzubair/fixit-campus/wiki/Risks-and-Limitations)).
 
 | ID number | Role |
 |---|---|
@@ -88,7 +90,7 @@ cd docs/sphinx
 make html          # Windows: make.bat html
 ```
 
-Open `docs/sphinx/build/html/index.html` in a browser.
+A built copy is kept in `docs/sphinx-html/`: open `docs/sphinx-html/index.html` in a browser, no build needed. A new build goes to `docs/sphinx/build/html/`, which git ignores.
 
 ## Folder structure
 
