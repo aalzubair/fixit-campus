@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>campus.views &#8212; FixIt Campus 1.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="../../_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../_static/documentation_options.js?v=f2a433a1"></script>
+    <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+   
+  <link rel="stylesheet" href="../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for campus.views</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""Views for FixIt Campus (Presentation layer, the C in MVC).</span>
+
+<span class="sd">Each view reads the request, checks login and role, validates with a form,</span>
+<span class="sd">calls ONE service function and chooses a template or a redirect. The IUB</span>
+<span class="sd">ID number is kept in the session between the steps of registration and of</span>
+<span class="sd">password reset; the services never see the session. Starting and ending</span>
+<span class="sd">the session (log in, log out) also happens only here.</span>
+<span class="sd">"""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">partial</span><span class="p">,</span> <span class="n">wraps</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">http</span><span class="w"> </span><span class="kn">import</span> <span class="n">HTTPStatus</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">django.contrib</span><span class="w"> </span><span class="kn">import</span> <span class="n">messages</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">django.contrib.auth</span><span class="w"> </span><span class="kn">import</span> <span class="n">login</span><span class="p">,</span> <span class="n">logout</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">django.contrib.auth.decorators</span><span class="w"> </span><span class="kn">import</span> <span class="n">login_required</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">django.http</span><span class="w"> </span><span class="kn">import</span> <span class="n">FileResponse</span><span class="p">,</span> <span class="n">Http404</span><span class="p">,</span> <span class="n">HttpRequest</span><span class="p">,</span> <span class="n">HttpResponse</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">django.shortcuts</span><span class="w"> </span><span class="kn">import</span> <span class="n">redirect</span><span class="p">,</span> <span class="n">render</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">django.urls</span><span class="w"> </span><span class="kn">import</span> <span class="n">reverse</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">django.views.decorators.cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">never_cache</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">django.views.decorators.http</span><span class="w"> </span><span class="kn">import</span> <span class="n">require_GET</span><span class="p">,</span> <span class="n">require_POST</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">campus.constants</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">COMPLAINANT_ROLES</span><span class="p">,</span>
+    <span class="n">HOME_PAGE_TEXT</span><span class="p">,</span>
+    <span class="n">MSG_COMPLAINT_ACCEPTED</span><span class="p">,</span>
+    <span class="n">MSG_COMPLAINT_NOT_ALLOWED</span><span class="p">,</span>
+    <span class="n">MSG_COMPLAINT_NOT_FOUND</span><span class="p">,</span>
+    <span class="n">MSG_COMPLAINT_NOT_SAVED</span><span class="p">,</span>
+    <span class="n">MSG_COMPLAINT_REJECTED</span><span class="p">,</span>
+    <span class="n">MSG_COMPLAINT_REOPENED</span><span class="p">,</span>
+    <span class="n">MSG_COMPLAINT_RESOLVED</span><span class="p">,</span>
+    <span class="n">MSG_FOLLOWING_STARTED</span><span class="p">,</span>
+    <span class="n">MSG_FOLLOWING_STOPPED</span><span class="p">,</span>
+    <span class="n">MSG_NEW_OTP_SENT</span><span class="p">,</span>
+    <span class="n">MSG_NOT_AUTHORIZED</span><span class="p">,</span>
+    <span class="n">MSG_NO_COMPLAINTS</span><span class="p">,</span>
+    <span class="n">MSG_NO_COMPLAINT_HISTORY</span><span class="p">,</span>
+    <span class="n">MSG_NO_FILTER_MATCH</span><span class="p">,</span>
+    <span class="n">MSG_ONLY_STAFF_CAN_REJECT</span><span class="p">,</span>
+    <span class="n">MSG_PASSWORD_CHANGED</span><span class="p">,</span>
+    <span class="n">MSG_REOPEN_EXPIRED</span><span class="p">,</span>
+    <span class="n">MSG_RESET_OTP_SENT</span><span class="p">,</span>
+    <span class="n">ROLE_MAINTENANCE_STAFF</span><span class="p">,</span>
+    <span class="n">SESSION_REGISTER_ID_NUMBER</span><span class="p">,</span>
+    <span class="n">SESSION_RESET_ID_NUMBER</span><span class="p">,</span>
+    <span class="n">STAFF_ROLES</span><span class="p">,</span>
+    <span class="n">TAB_FOLLOWING</span><span class="p">,</span>
+    <span class="n">TAB_MY_COMPLAINTS</span><span class="p">,</span>
+    <span class="n">TEMPLATE_COMPLAINT_DETAIL</span><span class="p">,</span>
+    <span class="n">TEMPLATE_COMPLAINT_SUBMITTED</span><span class="p">,</span>
+    <span class="n">TEMPLATE_EXISTING_COMPLAINTS</span><span class="p">,</span>
+    <span class="n">TEMPLATE_FORBIDDEN</span><span class="p">,</span>
+    <span class="n">TEMPLATE_HOME</span><span class="p">,</span>
+    <span class="n">TEMPLATE_LOGIN</span><span class="p">,</span>
+    <span class="n">TEMPLATE_MY_COMPLAINTS</span><span class="p">,</span>
+    <span class="n">TEMPLATE_PASSWORD_RESET</span><span class="p">,</span>
+    <span class="n">TEMPLATE_PASSWORD_RESET_VERIFY</span><span class="p">,</span>
+    <span class="n">TEMPLATE_REGISTER</span><span class="p">,</span>
+    <span class="n">TEMPLATE_REGISTER_DONE</span><span class="p">,</span>
+    <span class="n">TEMPLATE_REGISTER_VERIFY</span><span class="p">,</span>
+    <span class="n">TEMPLATE_REJECT_COMPLAINT</span><span class="p">,</span>
+    <span class="n">TEMPLATE_REOPEN_COMPLAINT</span><span class="p">,</span>
+    <span class="n">TEMPLATE_SIMILAR_COMPLAINTS</span><span class="p">,</span>
+    <span class="n">TEMPLATE_STAFF_COMPLAINTS</span><span class="p">,</span>
+    <span class="n">TEMPLATE_STAFF_COMPLAINT_DETAIL</span><span class="p">,</span>
+    <span class="n">TEMPLATE_SUBMIT_COMPLAINT</span><span class="p">,</span>
+    <span class="n">URL_NAME_COMPLAINT_DETAIL</span><span class="p">,</span>
+    <span class="n">URL_NAME_COMPLAINT_SUBMITTED</span><span class="p">,</span>
+    <span class="n">URL_NAME_EXISTING_COMPLAINTS</span><span class="p">,</span>
+    <span class="n">URL_NAME_HOME</span><span class="p">,</span>
+    <span class="n">URL_NAME_LOGIN</span><span class="p">,</span>
+    <span class="n">URL_NAME_MY_COMPLAINTS</span><span class="p">,</span>
+    <span class="n">URL_NAME_PASSWORD_RESET</span><span class="p">,</span>
+    <span class="n">URL_NAME_PASSWORD_RESET_VERIFY</span><span class="p">,</span>
+    <span class="n">URL_NAME_REGISTER</span><span class="p">,</span>
+    <span class="n">URL_NAME_REGISTER_DONE</span><span class="p">,</span>
+    <span class="n">URL_NAME_REGISTER_VERIFY</span><span class="p">,</span>
+    <span class="n">URL_NAME_STAFF_COMPLAINT_DETAIL</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">campus.forms</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">BrowseFilterForm</span><span class="p">,</span>
+    <span class="n">CategoryLocationForm</span><span class="p">,</span>
+    <span class="n">ComplaintForm</span><span class="p">,</span>
+    <span class="n">LoginForm</span><span class="p">,</span>
+    <span class="n">OtpForm</span><span class="p">,</span>
+    <span class="n">PasswordResetRequestForm</span><span class="p">,</span>
+    <span class="n">PasswordResetVerifyForm</span><span class="p">,</span>
+    <span class="n">RegisterForm</span><span class="p">,</span>
+    <span class="n">RejectForm</span><span class="p">,</span>
+    <span class="n">ReopenForm</span><span class="p">,</span>
+    <span class="n">StaffFilterForm</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">campus.services</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">BrowseFilters</span><span class="p">,</span>
+    <span class="n">ComplaintDraft</span><span class="p">,</span>
+    <span class="n">ServiceError</span><span class="p">,</span>
+    <span class="n">StaffFilters</span><span class="p">,</span>
+    <span class="n">accept_complaint</span><span class="p">,</span>
+    <span class="n">browse_complaints</span><span class="p">,</span>
+    <span class="n">follow_complaint</span><span class="p">,</span>
+    <span class="n">get_complaint_detail</span><span class="p">,</span>
+    <span class="n">get_complaint_photo</span><span class="p">,</span>
+    <span class="n">get_similar_complaints</span><span class="p">,</span>
+    <span class="n">get_staff_complaint_detail</span><span class="p">,</span>
+    <span class="n">list_my_complaints</span><span class="p">,</span>
+    <span class="n">list_staff_complaints</span><span class="p">,</span>
+    <span class="n">log_in_user</span><span class="p">,</span>
+    <span class="n">register_user</span><span class="p">,</span>
+    <span class="n">reject_complaint</span><span class="p">,</span>
+    <span class="n">reopen_complaint</span><span class="p">,</span>
+    <span class="n">request_new_registration_otp</span><span class="p">,</span>
+    <span class="n">request_password_reset</span><span class="p">,</span>
+    <span class="n">reset_password</span><span class="p">,</span>
+    <span class="n">resolve_complaint</span><span class="p">,</span>
+    <span class="n">submit_complaint</span><span class="p">,</span>
+    <span class="n">unfollow_complaint</span><span class="p">,</span>
+    <span class="n">verify_registration_otp</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">ViewFunction</span> <span class="o">=</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">HttpResponse</span><span class="p">]</span>
+<span class="c1"># A staff action service such as ``accept_complaint(user, complaint_id)``.</span>
+<span class="n">StaffAction</span> <span class="o">=</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span>
+
+
+<span class="c1"># --- Access control ---</span>
+
+
+<div class="viewcode-block" id="role_required">
+<a class="viewcode-back" href="../../campus.html#campus.views.role_required">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">role_required</span><span class="p">(</span><span class="o">*</span><span class="n">roles</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">ViewFunction</span><span class="p">],</span> <span class="n">ViewFunction</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Allow a view only for logged-in users with one of the given roles (FR-02).</span>
+
+<span class="sd">    Not logged in: redirect to the login page. Wrong role: HTTP 403 with</span>
+<span class="sd">    the "not authorized" message. ``never_cache`` is applied to every</span>
+<span class="sd">    answer, so the back button after logout never shows the page.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        roles: The role constants that may open the view.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        A decorator for a view function.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">decorator</span><span class="p">(</span><span class="n">view</span><span class="p">:</span> <span class="n">ViewFunction</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ViewFunction</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Wrap one view with the login, role and no-cache checks.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            view: The view function to protect.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            The protected view function.</span>
+<span class="sd">        """</span>
+
+        <span class="nd">@wraps</span><span class="p">(</span><span class="n">view</span><span class="p">)</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">protected_view</span><span class="p">(</span>
+            <span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="nb">object</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="nb">object</span>
+        <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">            </span><span class="sd">"""Show the view only to a user with an allowed role.</span>
+
+<span class="sd">            Args:</span>
+<span class="sd">                request: The HTTP request of a logged-in user.</span>
+<span class="sd">                args: Positional URL arguments for the view.</span>
+<span class="sd">                kwargs: Keyword URL arguments for the view.</span>
+
+<span class="sd">            Returns:</span>
+<span class="sd">                The view's response, or the 403 page.</span>
+<span class="sd">            """</span>
+            <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="o">.</span><span class="n">role</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">roles</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">render</span><span class="p">(</span>
+                    <span class="n">request</span><span class="p">,</span>
+                    <span class="n">TEMPLATE_FORBIDDEN</span><span class="p">,</span>
+                    <span class="p">{</span><span class="s2">"message"</span><span class="p">:</span> <span class="n">MSG_NOT_AUTHORIZED</span><span class="p">},</span>
+                    <span class="n">status</span><span class="o">=</span><span class="n">HTTPStatus</span><span class="o">.</span><span class="n">FORBIDDEN</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="k">return</span> <span class="n">view</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">never_cache</span><span class="p">(</span><span class="n">login_required</span><span class="p">(</span><span class="n">protected_view</span><span class="p">))</span>
+
+    <span class="k">return</span> <span class="n">decorator</span></div>
+
+
+
+<span class="c1"># --- FR-01 Register ---</span>
+
+
+<div class="viewcode-block" id="register_view">
+<a class="viewcode-back" href="../../campus.html#campus.views.register_view">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">register_view</span><span class="p">(</span><span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Show the registration form and register the user on submit (FR-01).</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        request: The HTTP request.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        The registration page, or a redirect to the OTP page on success.</span>
+<span class="sd">    """</span>
+    <span class="n">form</span> <span class="o">=</span> <span class="n">RegisterForm</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">POST</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">method</span> <span class="o">==</span> <span class="s2">"POST"</span> <span class="ow">and</span> <span class="n">form</span><span class="o">.</span><span class="n">is_valid</span><span class="p">():</span>
+        <span class="n">id_number</span> <span class="o">=</span> <span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">[</span><span class="s2">"id_number"</span><span class="p">]</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">register_user</span><span class="p">(</span><span class="n">id_number</span><span class="p">,</span> <span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">[</span><span class="s2">"password"</span><span class="p">])</span>
+        <span class="k">except</span> <span class="n">ServiceError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+            <span class="n">form</span><span class="o">.</span><span class="n">add_error</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">error</span><span class="o">.</span><span class="n">message</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">request</span><span class="o">.</span><span class="n">session</span><span class="p">[</span><span class="n">SESSION_REGISTER_ID_NUMBER</span><span class="p">]</span> <span class="o">=</span> <span class="n">id_number</span>
+            <span class="k">return</span> <span class="n">redirect</span><span class="p">(</span><span class="n">URL_NAME_REGISTER_VERIFY</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">render</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">TEMPLATE_REGISTER</span><span class="p">,</span> <span class="p">{</span><span class="s2">"form"</span><span class="p">:</span> <span class="n">form</span><span class="p">})</span></div>
+
+
+
+<div class="viewcode-block" id="register_verify_view">
+<a class="viewcode-back" href="../../campus.html#campus.views.register_verify_view">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">register_verify_view</span><span class="p">(</span><span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Show the OTP form and activate the account on a correct OTP (FR-01).</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        request: The HTTP request.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        The OTP page, a redirect to the success page, or a redirect to the</span>
+<span class="sd">        registration page if the user has not registered in this session.</span>
+<span class="sd">    """</span>
+    <span class="n">id_number</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">session</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">SESSION_REGISTER_ID_NUMBER</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">id_number</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">redirect</span><span class="p">(</span><span class="n">URL_NAME_REGISTER</span><span class="p">)</span>
+    <span class="n">form</span> <span class="o">=</span> <span class="n">OtpForm</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">POST</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">method</span> <span class="o">==</span> <span class="s2">"POST"</span> <span class="ow">and</span> <span class="n">form</span><span class="o">.</span><span class="n">is_valid</span><span class="p">():</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">verify_registration_otp</span><span class="p">(</span><span class="n">id_number</span><span class="p">,</span> <span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">[</span><span class="s2">"otp"</span><span class="p">])</span>
+        <span class="k">except</span> <span class="n">ServiceError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+            <span class="n">form</span><span class="o">.</span><span class="n">add_error</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">error</span><span class="o">.</span><span class="n">message</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">del</span> <span class="n">request</span><span class="o">.</span><span class="n">session</span><span class="p">[</span><span class="n">SESSION_REGISTER_ID_NUMBER</span><span class="p">]</span>
+            <span class="k">return</span> <span class="n">redirect</span><span class="p">(</span><span class="n">URL_NAME_REGISTER_DONE</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">render</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">TEMPLATE_REGISTER_VERIFY</span><span class="p">,</span> <span class="p">{</span><span class="s2">"form"</span><span class="p">:</span> <span class="n">form</span><span class="p">})</span></div>
+
+
+
+<div class="viewcode-block" id="register_new_otp_view">
+<a class="viewcode-back" href="../../campus.html#campus.views.register_new_otp_view">[docs]</a>
+<span class="nd">@require_POST</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">register_new_otp_view</span><span class="p">(</span><span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Send a new registration OTP, then go back to the OTP page (FR-01).</span>
+
+<span class="sd">    POST only, because it changes data (it cancels the earlier OTP).</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        request: The HTTP request.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        A redirect to the OTP page (with a success or error message), or</span>
+<span class="sd">        to the registration page if the user has not registered in this</span>
+<span class="sd">        session.</span>
+<span class="sd">    """</span>
+    <span class="n">id_number</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">session</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">SESSION_REGISTER_ID_NUMBER</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">id_number</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">redirect</span><span class="p">(</span><span class="n">URL_NAME_REGISTER</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">request_new_registration_otp</span><span class="p">(</span><span class="n">id_number</span><span class="p">)</span>
+    <span class="k">except</span> <span class="n">ServiceError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+        <span class="n">messages</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">error</span><span class="o">.</span><span class="n">message</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">messages</span><span class="o">.</span><span class="n">success</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">MSG_NEW_OTP_SENT</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">redirect</span><span class="p">(</span><span class="n">URL_NAME_REGISTER_VERIFY</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="register_done_view">
+<a class="viewcode-back" href="../../campus.html#campus.views.register_done_view">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">register_done_view</span><span class="p">(</span><span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Show the page that confirms the account is activated.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        request: The HTTP request.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        The success page.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="n">render</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">TEMPLATE_REGISTER_DONE</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># --- FR-02 Log in, FR-03 Log out ---</span>
+
+
+<div class="viewcode-block" id="login_view">
+<a class="viewcode-back" href="../../campus.html#campus.views.login_view">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">login_view</span><span class="p">(</span><span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Show the login form and start the session on success (FR-02).</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        request: The HTTP request.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        The login page, or a redirect to the home page when logged in.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="o">.</span><span class="n">is_authenticated</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">redirect</span><span class="p">(</span><span class="n">URL_NAME_HOME</span><span class="p">)</span>
+    <span class="n">form</span> <span class="o">=</span> <span class="n">LoginForm</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">POST</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">method</span> <span class="o">==</span> <span class="s2">"POST"</span> <span class="ow">and</span> <span class="n">form</span><span class="o">.</span><span class="n">is_valid</span><span class="p">():</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">user</span> <span class="o">=</span> <span class="n">log_in_user</span><span class="p">(</span>
+                <span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">[</span><span class="s2">"id_number"</span><span class="p">],</span> <span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">[</span><span class="s2">"password"</span><span class="p">]</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="n">ServiceError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+            <span class="n">form</span><span class="o">.</span><span class="n">add_error</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">error</span><span class="o">.</span><span class="n">message</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">login</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">user</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">redirect</span><span class="p">(</span><span class="n">URL_NAME_HOME</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">render</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">TEMPLATE_LOGIN</span><span class="p">,</span> <span class="p">{</span><span class="s2">"form"</span><span class="p">:</span> <span class="n">form</span><span class="p">})</span></div>
+
+
+
+<div class="viewcode-block" id="logout_view">
+<a class="viewcode-back" href="../../campus.html#campus.views.logout_view">[docs]</a>
+<span class="nd">@require_POST</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">logout_view</span><span class="p">(</span><span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""End the session and show the login page (FR-03).</span>
+
+<span class="sd">    POST only, so a link or an image on another site cannot log a user out.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        request: The HTTP request.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        A redirect to the login page.</span>
+<span class="sd">    """</span>
+    <span class="n">logout</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">redirect</span><span class="p">(</span><span class="n">URL_NAME_LOGIN</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="home_view">
+<a class="viewcode-back" href="../../campus.html#campus.views.home_view">[docs]</a>
+<span class="nd">@never_cache</span>
+<span class="nd">@login_required</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">home_view</span><span class="p">(</span><span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Show the home page for the user's role (FR-02).</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        request: The HTTP request of a logged-in user.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        The home page with the heading and text for the user's role.</span>
+<span class="sd">    """</span>
+    <span class="n">texts_by_role</span> <span class="o">=</span> <span class="p">{</span><span class="n">role</span><span class="p">:</span> <span class="p">(</span><span class="n">heading</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span> <span class="k">for</span> <span class="n">role</span><span class="p">,</span> <span class="n">heading</span><span class="p">,</span> <span class="n">text</span> <span class="ow">in</span> <span class="n">HOME_PAGE_TEXT</span><span class="p">}</span>
+    <span class="n">heading</span><span class="p">,</span> <span class="n">text</span> <span class="o">=</span> <span class="n">texts_by_role</span><span class="p">[</span><span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="o">.</span><span class="n">role</span><span class="p">]</span>
+    <span class="n">context</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"heading"</span><span class="p">:</span> <span class="n">heading</span><span class="p">,</span>
+        <span class="s2">"text"</span><span class="p">:</span> <span class="n">text</span><span class="p">,</span>
+        <span class="s2">"can_use_complaints"</span><span class="p">:</span> <span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="o">.</span><span class="n">role</span> <span class="ow">in</span> <span class="n">COMPLAINANT_ROLES</span><span class="p">,</span>
+        <span class="s2">"can_handle_complaints"</span><span class="p">:</span> <span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="o">.</span><span class="n">role</span> <span class="ow">in</span> <span class="n">STAFF_ROLES</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="n">render</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">TEMPLATE_HOME</span><span class="p">,</span> <span class="n">context</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># --- FR-04 Reset password ---</span>
+
+
+<div class="viewcode-block" id="password_reset_view">
+<a class="viewcode-back" href="../../campus.html#campus.views.password_reset_view">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">password_reset_view</span><span class="p">(</span><span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Ask for the IUB ID number and send a password-reset OTP (FR-04).</span>
+
+<span class="sd">    The same message is shown whether or not the ID is registered, so the</span>
+<span class="sd">    page never reveals which IDs exist.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        request: The HTTP request.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        The reset page, or a redirect to the OTP page.</span>
+<span class="sd">    """</span>
+    <span class="n">form</span> <span class="o">=</span> <span class="n">PasswordResetRequestForm</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">POST</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">method</span> <span class="o">==</span> <span class="s2">"POST"</span> <span class="ow">and</span> <span class="n">form</span><span class="o">.</span><span class="n">is_valid</span><span class="p">():</span>
+        <span class="n">id_number</span> <span class="o">=</span> <span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">[</span><span class="s2">"id_number"</span><span class="p">]</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">request_password_reset</span><span class="p">(</span><span class="n">id_number</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">ServiceError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+            <span class="n">form</span><span class="o">.</span><span class="n">add_error</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">error</span><span class="o">.</span><span class="n">message</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">request</span><span class="o">.</span><span class="n">session</span><span class="p">[</span><span class="n">SESSION_RESET_ID_NUMBER</span><span class="p">]</span> <span class="o">=</span> <span class="n">id_number</span>
+            <span class="n">messages</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">MSG_RESET_OTP_SENT</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">redirect</span><span class="p">(</span><span class="n">URL_NAME_PASSWORD_RESET_VERIFY</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">render</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">TEMPLATE_PASSWORD_RESET</span><span class="p">,</span> <span class="p">{</span><span class="s2">"form"</span><span class="p">:</span> <span class="n">form</span><span class="p">})</span></div>
+
+
+
+<div class="viewcode-block" id="password_reset_verify_view">
+<a class="viewcode-back" href="../../campus.html#campus.views.password_reset_verify_view">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">password_reset_verify_view</span><span class="p">(</span><span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Change the password with the OTP and the new password (FR-04).</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        request: The HTTP request.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        The OTP page, a redirect to the login page on success, or a</span>
+<span class="sd">        redirect to the reset page if no reset was started in this session.</span>
+<span class="sd">    """</span>
+    <span class="n">id_number</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">session</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">SESSION_RESET_ID_NUMBER</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">id_number</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">redirect</span><span class="p">(</span><span class="n">URL_NAME_PASSWORD_RESET</span><span class="p">)</span>
+    <span class="n">form</span> <span class="o">=</span> <span class="n">PasswordResetVerifyForm</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">POST</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">method</span> <span class="o">==</span> <span class="s2">"POST"</span> <span class="ow">and</span> <span class="n">form</span><span class="o">.</span><span class="n">is_valid</span><span class="p">():</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">reset_password</span><span class="p">(</span>
+                <span class="n">id_number</span><span class="p">,</span> <span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">[</span><span class="s2">"otp"</span><span class="p">],</span> <span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">[</span><span class="s2">"new_password"</span><span class="p">]</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="n">ServiceError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+            <span class="n">form</span><span class="o">.</span><span class="n">add_error</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">error</span><span class="o">.</span><span class="n">message</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">del</span> <span class="n">request</span><span class="o">.</span><span class="n">session</span><span class="p">[</span><span class="n">SESSION_RESET_ID_NUMBER</span><span class="p">]</span>
+            <span class="n">messages</span><span class="o">.</span><span class="n">success</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">MSG_PASSWORD_CHANGED</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">redirect</span><span class="p">(</span><span class="n">URL_NAME_LOGIN</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">render</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">TEMPLATE_PASSWORD_RESET_VERIFY</span><span class="p">,</span> <span class="p">{</span><span class="s2">"form"</span><span class="p">:</span> <span class="n">form</span><span class="p">})</span></div>
+
+
+
+<div class="viewcode-block" id="password_reset_new_otp_view">
+<a class="viewcode-back" href="../../campus.html#campus.views.password_reset_new_otp_view">[docs]</a>
+<span class="nd">@require_POST</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">password_reset_new_otp_view</span><span class="p">(</span><span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Send a new password-reset OTP, then go back to the OTP page (FR-04).</span>
+
+<span class="sd">    POST only, because it changes data (it cancels the earlier OTP).</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        request: The HTTP request.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        A redirect to the OTP page (with a success or error message), or</span>
+<span class="sd">        to the reset page if no reset was started in this session.</span>
+<span class="sd">    """</span>
+    <span class="n">id_number</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">session</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">SESSION_RESET_ID_NUMBER</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">id_number</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">redirect</span><span class="p">(</span><span class="n">URL_NAME_PASSWORD_RESET</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">request_password_reset</span><span class="p">(</span><span class="n">id_number</span><span class="p">)</span>
+    <span class="k">except</span> <span class="n">ServiceError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+        <span class="n">messages</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">error</span><span class="o">.</span><span class="n">message</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">messages</span><span class="o">.</span><span class="n">success</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">MSG_NEW_OTP_SENT</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">redirect</span><span class="p">(</span><span class="n">URL_NAME_PASSWORD_RESET_VERIFY</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># --- FR-06 to FR-10, FR-21 Complaints ---</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_forbidden</span><span class="p">(</span><span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Show the "access denied" page with HTTP 403.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        request: The HTTP request.</span>
+<span class="sd">        message: The user-facing message to show.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        The 403 response.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="n">render</span><span class="p">(</span>
+        <span class="n">request</span><span class="p">,</span> <span class="n">TEMPLATE_FORBIDDEN</span><span class="p">,</span> <span class="p">{</span><span class="s2">"message"</span><span class="p">:</span> <span class="n">message</span><span class="p">},</span> <span class="n">status</span><span class="o">=</span><span class="n">HTTPStatus</span><span class="o">.</span><span class="n">FORBIDDEN</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_following_tab_url</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Build the address of the Following tab of My Complaints.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        The My Complaints address with the Following tab selected.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">reverse</span><span class="p">(</span><span class="n">URL_NAME_MY_COMPLAINTS</span><span class="p">)</span><span class="si">}</span><span class="s2">?tab=</span><span class="si">{</span><span class="n">TAB_FOLLOWING</span><span class="si">}</span><span class="s2">"</span>
+
+
+<div class="viewcode-block" id="submit_complaint_view">
+<a class="viewcode-back" href="../../campus.html#campus.views.submit_complaint_view">[docs]</a>
+<span class="nd">@role_required</span><span class="p">(</span><span class="o">*</span><span class="n">COMPLAINANT_ROLES</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">submit_complaint_view</span><span class="p">(</span><span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Show the complaint form and save the complaint on submit (FR-06, FR-08).</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        request: The HTTP request of a complainant.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        The form page, or a redirect to the confirmation page after saving.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">method</span> <span class="o">==</span> <span class="s2">"POST"</span><span class="p">:</span>
+        <span class="n">form</span> <span class="o">=</span> <span class="n">ComplaintForm</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">POST</span><span class="p">,</span> <span class="n">request</span><span class="o">.</span><span class="n">FILES</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">form</span><span class="o">.</span><span class="n">is_valid</span><span class="p">():</span>
+            <span class="n">complaint</span> <span class="o">=</span> <span class="n">submit_complaint</span><span class="p">(</span>
+                <span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="p">,</span> <span class="n">ComplaintDraft</span><span class="p">(</span><span class="o">**</span><span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">redirect</span><span class="p">(</span>
+                <span class="n">URL_NAME_COMPLAINT_SUBMITTED</span><span class="p">,</span> <span class="n">complaint_id</span><span class="o">=</span><span class="n">complaint</span><span class="o">.</span><span class="n">complaint_id</span>
+            <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">form</span> <span class="o">=</span> <span class="n">ComplaintForm</span><span class="p">()</span>
+    <span class="n">context</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"form"</span><span class="p">:</span> <span class="n">form</span><span class="p">,</span> <span class="s2">"not_saved_message"</span><span class="p">:</span> <span class="n">MSG_COMPLAINT_NOT_SAVED</span><span class="p">}</span>
+    <span class="k">return</span> <span class="n">render</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">TEMPLATE_SUBMIT_COMPLAINT</span><span class="p">,</span> <span class="n">context</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="similar_complaints_view">
+<a class="viewcode-back" href="../../campus.html#campus.views.similar_complaints_view">[docs]</a>
+<span class="nd">@role_required</span><span class="p">(</span><span class="o">*</span><span class="n">COMPLAINANT_ROLES</span><span class="p">)</span>
+<span class="nd">@require_GET</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">similar_complaints_view</span><span class="p">(</span><span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Show the "Already reported?" panel for a category and location (FR-07).</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        request: The HTTP request with ``category``, ``building``, ``floor``</span>
+<span class="sd">            and ``room_or_area`` in the query string.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        The panel as a piece of HTML. Without a valid category and location</span>
+<span class="sd">        it asks the user to choose them.</span>
+<span class="sd">    """</span>
+    <span class="n">form</span> <span class="o">=</span> <span class="n">CategoryLocationForm</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">GET</span><span class="p">)</span>
+    <span class="n">similar</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">form</span><span class="o">.</span><span class="n">is_valid</span><span class="p">():</span>
+        <span class="n">similar</span> <span class="o">=</span> <span class="n">get_similar_complaints</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="p">,</span> <span class="o">**</span><span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">render</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">TEMPLATE_SIMILAR_COMPLAINTS</span><span class="p">,</span> <span class="p">{</span><span class="s2">"similar"</span><span class="p">:</span> <span class="n">similar</span><span class="p">})</span></div>
+
+
+
+<div class="viewcode-block" id="complaint_submitted_view">
+<a class="viewcode-back" href="../../campus.html#campus.views.complaint_submitted_view">[docs]</a>
+<span class="nd">@role_required</span><span class="p">(</span><span class="o">*</span><span class="n">COMPLAINANT_ROLES</span><span class="p">)</span>
+<span class="nd">@require_GET</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">complaint_submitted_view</span><span class="p">(</span><span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">,</span> <span class="n">complaint_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Confirm a saved complaint and show its ID (FR-06).</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        request: The HTTP request of the complaint's owner.</span>
+<span class="sd">        complaint_id: The ID of the complaint that was just saved.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        The confirmation page, or the 403 page for someone else's complaint.</span>
+<span class="sd">    """</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">detail</span> <span class="o">=</span> <span class="n">get_complaint_detail</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="p">,</span> <span class="n">complaint_id</span><span class="p">)</span>
+    <span class="k">except</span> <span class="n">ServiceError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_forbidden</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">error</span><span class="o">.</span><span class="n">message</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">render</span><span class="p">(</span>
+        <span class="n">request</span><span class="p">,</span> <span class="n">TEMPLATE_COMPLAINT_SUBMITTED</span><span class="p">,</span> <span class="p">{</span><span class="s2">"complaint"</span><span class="p">:</span> <span class="n">detail</span><span class="o">.</span><span class="n">complaint</span><span class="p">}</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="existing_complaints_view">
+<a class="viewcode-back" href="../../campus.html#campus.views.existing_complaints_view">[docs]</a>
+<span class="nd">@role_required</span><span class="p">(</span><span class="o">*</span><span class="n">COMPLAINANT_ROLES</span><span class="p">)</span>
+<span class="nd">@require_GET</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">existing_complaints_view</span><span class="p">(</span><span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Browse Open and In Progress complaints with filters (FR-21).</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        request: The HTTP request; the filters are in the query string.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        The list page, with a message when nothing matches.</span>
+<span class="sd">    """</span>
+    <span class="n">form</span> <span class="o">=</span> <span class="n">BrowseFilterForm</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">GET</span><span class="p">)</span>
+    <span class="n">filters</span> <span class="o">=</span> <span class="n">BrowseFilters</span><span class="p">(</span><span class="o">**</span><span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">)</span> <span class="k">if</span> <span class="n">form</span><span class="o">.</span><span class="n">is_valid</span><span class="p">()</span> <span class="k">else</span> <span class="n">BrowseFilters</span><span class="p">()</span>
+    <span class="n">has_filters</span> <span class="o">=</span> <span class="n">filters</span> <span class="o">!=</span> <span class="n">BrowseFilters</span><span class="p">()</span>
+    <span class="n">context</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"form"</span><span class="p">:</span> <span class="n">form</span><span class="p">,</span>
+        <span class="s2">"complaints"</span><span class="p">:</span> <span class="n">browse_complaints</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="p">,</span> <span class="n">filters</span><span class="p">),</span>
+        <span class="s2">"has_filters"</span><span class="p">:</span> <span class="n">has_filters</span><span class="p">,</span>
+        <span class="s2">"empty_message"</span><span class="p">:</span> <span class="n">MSG_NO_FILTER_MATCH</span> <span class="k">if</span> <span class="n">has_filters</span> <span class="k">else</span> <span class="n">MSG_NO_COMPLAINTS</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="n">render</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">TEMPLATE_EXISTING_COMPLAINTS</span><span class="p">,</span> <span class="n">context</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="my_complaints_view">
+<a class="viewcode-back" href="../../campus.html#campus.views.my_complaints_view">[docs]</a>
+<span class="nd">@role_required</span><span class="p">(</span><span class="o">*</span><span class="n">COMPLAINANT_ROLES</span><span class="p">)</span>
+<span class="nd">@require_GET</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">my_complaints_view</span><span class="p">(</span><span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Show the user's own complaints and the ones they follow (FR-09).</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        request: The HTTP request; ``tab`` in the query string picks the list.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        The My Complaints page.</span>
+<span class="sd">    """</span>
+    <span class="n">tab</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">TAB_FOLLOWING</span> <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">GET</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"tab"</span><span class="p">)</span> <span class="o">==</span> <span class="n">TAB_FOLLOWING</span> <span class="k">else</span> <span class="n">TAB_MY_COMPLAINTS</span>
+    <span class="p">)</span>
+    <span class="n">context</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"tab"</span><span class="p">:</span> <span class="n">tab</span><span class="p">,</span>
+        <span class="s2">"tab_mine"</span><span class="p">:</span> <span class="n">TAB_MY_COMPLAINTS</span><span class="p">,</span>
+        <span class="s2">"tab_following"</span><span class="p">:</span> <span class="n">TAB_FOLLOWING</span><span class="p">,</span>
+        <span class="s2">"my"</span><span class="p">:</span> <span class="n">list_my_complaints</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="p">),</span>
+        <span class="s2">"empty_message"</span><span class="p">:</span> <span class="n">MSG_NO_COMPLAINTS</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="n">render</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">TEMPLATE_MY_COMPLAINTS</span><span class="p">,</span> <span class="n">context</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="complaint_detail_view">
+<a class="viewcode-back" href="../../campus.html#campus.views.complaint_detail_view">[docs]</a>
+<span class="nd">@role_required</span><span class="p">(</span><span class="o">*</span><span class="n">COMPLAINANT_ROLES</span><span class="p">)</span>
+<span class="nd">@require_GET</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">complaint_detail_view</span><span class="p">(</span><span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">,</span> <span class="n">complaint_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Show one of the user's own complaints (FR-09, FR-10).</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        request: The HTTP request of a complainant.</span>
+<span class="sd">        complaint_id: The complaint ID from the address.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        The detail page, or the 403 page if it is not the user's complaint.</span>
+<span class="sd">    """</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">detail</span> <span class="o">=</span> <span class="n">get_complaint_detail</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="p">,</span> <span class="n">complaint_id</span><span class="p">)</span>
+    <span class="k">except</span> <span class="n">ServiceError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_forbidden</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">error</span><span class="o">.</span><span class="n">message</span><span class="p">)</span>
+    <span class="n">context</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"detail"</span><span class="p">:</span> <span class="n">detail</span><span class="p">,</span> <span class="s2">"expired_message"</span><span class="p">:</span> <span class="n">MSG_REOPEN_EXPIRED</span><span class="p">}</span>
+    <span class="k">return</span> <span class="n">render</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">TEMPLATE_COMPLAINT_DETAIL</span><span class="p">,</span> <span class="n">context</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="complaint_photo_view">
+<a class="viewcode-back" href="../../campus.html#campus.views.complaint_photo_view">[docs]</a>
+<span class="nd">@role_required</span><span class="p">(</span><span class="o">*</span><span class="n">COMPLAINANT_ROLES</span><span class="p">)</span>
+<span class="nd">@require_GET</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">complaint_photo_view</span><span class="p">(</span><span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">,</span> <span class="n">complaint_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Send the photo of the user's own complaint (NFR-05).</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        request: The HTTP request of a complainant.</span>
+<span class="sd">        complaint_id: The complaint ID from the address.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        The image, the 403 page for someone else's complaint, or 404 when</span>
+<span class="sd">        there is no photo.</span>
+
+<span class="sd">    Raises:</span>
+<span class="sd">        Http404: If the complaint has no photo or the file is missing.</span>
+<span class="sd">    """</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">photo</span> <span class="o">=</span> <span class="n">get_complaint_photo</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="p">,</span> <span class="n">complaint_id</span><span class="p">)</span>
+    <span class="k">except</span> <span class="n">ServiceError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_forbidden</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">error</span><span class="o">.</span><span class="n">message</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">photo</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">Http404</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">FileResponse</span><span class="p">(</span><span class="n">photo</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="s2">"rb"</span><span class="p">))</span>
+    <span class="k">except</span> <span class="ne">FileNotFoundError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">Http404</span> <span class="kn">from</span><span class="w"> </span><span class="nn">error</span></div>
+
+
+
+<div class="viewcode-block" id="follow_complaint_view">
+<a class="viewcode-back" href="../../campus.html#campus.views.follow_complaint_view">[docs]</a>
+<span class="nd">@role_required</span><span class="p">(</span><span class="o">*</span><span class="n">COMPLAINANT_ROLES</span><span class="p">)</span>
+<span class="nd">@require_POST</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">follow_complaint_view</span><span class="p">(</span><span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">,</span> <span class="n">complaint_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Follow another user's complaint instead of duplicating it (FR-07).</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        request: The HTTP POST request of a complainant.</span>
+<span class="sd">        complaint_id: The complaint ID from the address.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        A redirect to the Following tab, or to the browse page on an error.</span>
+<span class="sd">    """</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">follow_complaint</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="p">,</span> <span class="n">complaint_id</span><span class="p">)</span>
+    <span class="k">except</span> <span class="n">ServiceError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+        <span class="n">messages</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">error</span><span class="o">.</span><span class="n">message</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">redirect</span><span class="p">(</span><span class="n">URL_NAME_EXISTING_COMPLAINTS</span><span class="p">)</span>
+    <span class="n">messages</span><span class="o">.</span><span class="n">success</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">MSG_FOLLOWING_STARTED</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">redirect</span><span class="p">(</span><span class="n">_following_tab_url</span><span class="p">())</span></div>
+
+
+
+<div class="viewcode-block" id="unfollow_complaint_view">
+<a class="viewcode-back" href="../../campus.html#campus.views.unfollow_complaint_view">[docs]</a>
+<span class="nd">@role_required</span><span class="p">(</span><span class="o">*</span><span class="n">COMPLAINANT_ROLES</span><span class="p">)</span>
+<span class="nd">@require_POST</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">unfollow_complaint_view</span><span class="p">(</span><span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">,</span> <span class="n">complaint_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Stop following a complaint (FR-09).</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        request: The HTTP POST request of a complainant.</span>
+<span class="sd">        complaint_id: The complaint ID from the address.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        A redirect to the Following tab.</span>
+<span class="sd">    """</span>
+    <span class="n">unfollow_complaint</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="p">,</span> <span class="n">complaint_id</span><span class="p">)</span>
+    <span class="n">messages</span><span class="o">.</span><span class="n">success</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">MSG_FOLLOWING_STOPPED</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">redirect</span><span class="p">(</span><span class="n">_following_tab_url</span><span class="p">())</span></div>
+
+
+
+<div class="viewcode-block" id="reopen_complaint_view">
+<a class="viewcode-back" href="../../campus.html#campus.views.reopen_complaint_view">[docs]</a>
+<span class="nd">@role_required</span><span class="p">(</span><span class="o">*</span><span class="n">COMPLAINANT_ROLES</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">reopen_complaint_view</span><span class="p">(</span><span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">,</span> <span class="n">complaint_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Ask for a reason and reopen a Resolved complaint (FR-10).</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        request: The HTTP request of the complaint's owner.</span>
+<span class="sd">        complaint_id: The complaint ID from the address.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        The reason form, or a redirect to the detail page. A complaint that</span>
+<span class="sd">        cannot be reopened also goes back to the detail page, which explains why.</span>
+<span class="sd">    """</span>
+    <span class="n">form</span> <span class="o">=</span> <span class="n">ReopenForm</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">POST</span><span class="p">)</span> <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">method</span> <span class="o">==</span> <span class="s2">"POST"</span> <span class="k">else</span> <span class="n">ReopenForm</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">method</span> <span class="o">==</span> <span class="s2">"POST"</span> <span class="ow">and</span> <span class="n">form</span><span class="o">.</span><span class="n">is_valid</span><span class="p">():</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">reopen_complaint</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="p">,</span> <span class="n">complaint_id</span><span class="p">,</span> <span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">[</span><span class="s2">"reason"</span><span class="p">])</span>
+        <span class="k">except</span> <span class="n">ServiceError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">error</span><span class="o">.</span><span class="n">message</span> <span class="o">==</span> <span class="n">MSG_COMPLAINT_NOT_ALLOWED</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">_forbidden</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">error</span><span class="o">.</span><span class="n">message</span><span class="p">)</span>
+            <span class="n">messages</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">error</span><span class="o">.</span><span class="n">message</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">messages</span><span class="o">.</span><span class="n">success</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">MSG_COMPLAINT_REOPENED</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">redirect</span><span class="p">(</span><span class="n">URL_NAME_COMPLAINT_DETAIL</span><span class="p">,</span> <span class="n">complaint_id</span><span class="o">=</span><span class="n">complaint_id</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">detail</span> <span class="o">=</span> <span class="n">get_complaint_detail</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="p">,</span> <span class="n">complaint_id</span><span class="p">)</span>
+    <span class="k">except</span> <span class="n">ServiceError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_forbidden</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">error</span><span class="o">.</span><span class="n">message</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">detail</span><span class="o">.</span><span class="n">can_reopen</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">redirect</span><span class="p">(</span><span class="n">URL_NAME_COMPLAINT_DETAIL</span><span class="p">,</span> <span class="n">complaint_id</span><span class="o">=</span><span class="n">complaint_id</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">render</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">TEMPLATE_REOPEN_COMPLAINT</span><span class="p">,</span> <span class="p">{</span><span class="s2">"form"</span><span class="p">:</span> <span class="n">form</span><span class="p">,</span> <span class="s2">"detail"</span><span class="p">:</span> <span class="n">detail</span><span class="p">})</span></div>
+
+
+
+<span class="c1"># --- F5 Staff actions (FR-11 to FR-14, FR-20) ---</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_run_staff_action</span><span class="p">(</span>
+    <span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">,</span> <span class="n">complaint_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">action</span><span class="p">:</span> <span class="n">StaffAction</span><span class="p">,</span> <span class="n">success</span><span class="p">:</span> <span class="nb">str</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Call one staff action and go back to the complaint (FR-12, FR-13).</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        request: The HTTP request of a staff member or supervisor.</span>
+<span class="sd">        complaint_id: The complaint ID from the address.</span>
+<span class="sd">        action: The service function to call with the user and the ID.</span>
+<span class="sd">        success: The message to show when the action worked.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        A redirect to the complaint, which shows the success or the SRS</span>
+<span class="sd">        error message.</span>
+
+<span class="sd">    Raises:</span>
+<span class="sd">        Http404: If there is no complaint with this ID.</span>
+<span class="sd">    """</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">action</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="p">,</span> <span class="n">complaint_id</span><span class="p">)</span>
+    <span class="k">except</span> <span class="n">ServiceError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">error</span><span class="o">.</span><span class="n">message</span> <span class="o">==</span> <span class="n">MSG_COMPLAINT_NOT_FOUND</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">Http404</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">message</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">error</span>
+        <span class="n">messages</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">error</span><span class="o">.</span><span class="n">message</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">messages</span><span class="o">.</span><span class="n">success</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">success</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">redirect</span><span class="p">(</span><span class="n">URL_NAME_STAFF_COMPLAINT_DETAIL</span><span class="p">,</span> <span class="n">complaint_id</span><span class="o">=</span><span class="n">complaint_id</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="staff_complaints_view">
+<a class="viewcode-back" href="../../campus.html#campus.views.staff_complaints_view">[docs]</a>
+<span class="nd">@role_required</span><span class="p">(</span><span class="o">*</span><span class="n">STAFF_ROLES</span><span class="p">)</span>
+<span class="nd">@require_GET</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">staff_complaints_view</span><span class="p">(</span><span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""List every complaint for staff, with filters (FR-11).</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        request: The HTTP request; the filters are in the query string.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        The list page, with a message when nothing matches.</span>
+<span class="sd">    """</span>
+    <span class="n">form</span> <span class="o">=</span> <span class="n">StaffFilterForm</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">GET</span><span class="p">)</span>
+    <span class="n">filters</span> <span class="o">=</span> <span class="n">StaffFilters</span><span class="p">(</span><span class="o">**</span><span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">)</span> <span class="k">if</span> <span class="n">form</span><span class="o">.</span><span class="n">is_valid</span><span class="p">()</span> <span class="k">else</span> <span class="n">StaffFilters</span><span class="p">()</span>
+    <span class="n">has_filters</span> <span class="o">=</span> <span class="n">filters</span> <span class="o">!=</span> <span class="n">StaffFilters</span><span class="p">()</span>
+    <span class="n">context</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"form"</span><span class="p">:</span> <span class="n">form</span><span class="p">,</span>
+        <span class="s2">"complaints"</span><span class="p">:</span> <span class="n">list_staff_complaints</span><span class="p">(</span><span class="n">filters</span><span class="p">),</span>
+        <span class="s2">"can_accept"</span><span class="p">:</span> <span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="o">.</span><span class="n">role</span> <span class="o">==</span> <span class="n">ROLE_MAINTENANCE_STAFF</span><span class="p">,</span>
+        <span class="s2">"empty_message"</span><span class="p">:</span> <span class="n">MSG_NO_FILTER_MATCH</span> <span class="k">if</span> <span class="n">has_filters</span> <span class="k">else</span> <span class="n">MSG_NO_COMPLAINTS</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="n">render</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">TEMPLATE_STAFF_COMPLAINTS</span><span class="p">,</span> <span class="n">context</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="staff_complaint_detail_view">
+<a class="viewcode-back" href="../../campus.html#campus.views.staff_complaint_detail_view">[docs]</a>
+<span class="nd">@role_required</span><span class="p">(</span><span class="o">*</span><span class="n">STAFF_ROLES</span><span class="p">)</span>
+<span class="nd">@require_GET</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">staff_complaint_detail_view</span><span class="p">(</span>
+    <span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">,</span> <span class="n">complaint_id</span><span class="p">:</span> <span class="nb">str</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Show one complaint with its actions and location history (FR-14).</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        request: The HTTP request of a staff member or supervisor.</span>
+<span class="sd">        complaint_id: The complaint ID from the address.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        The detail page.</span>
+
+<span class="sd">    Raises:</span>
+<span class="sd">        Http404: If there is no complaint with this ID.</span>
+<span class="sd">    """</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">detail</span> <span class="o">=</span> <span class="n">get_staff_complaint_detail</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="p">,</span> <span class="n">complaint_id</span><span class="p">)</span>
+    <span class="k">except</span> <span class="n">ServiceError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">Http404</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">message</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">error</span>
+    <span class="n">context</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"detail"</span><span class="p">:</span> <span class="n">detail</span><span class="p">,</span> <span class="s2">"empty_history_message"</span><span class="p">:</span> <span class="n">MSG_NO_COMPLAINT_HISTORY</span><span class="p">}</span>
+    <span class="k">return</span> <span class="n">render</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">TEMPLATE_STAFF_COMPLAINT_DETAIL</span><span class="p">,</span> <span class="n">context</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="accept_complaint_view">
+<a class="viewcode-back" href="../../campus.html#campus.views.accept_complaint_view">[docs]</a>
+<span class="nd">@role_required</span><span class="p">(</span><span class="n">ROLE_MAINTENANCE_STAFF</span><span class="p">)</span>
+<span class="nd">@require_POST</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">accept_complaint_view</span><span class="p">(</span><span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">,</span> <span class="n">complaint_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Accept an Open complaint (FR-12).</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        request: The HTTP request of a maintenance staff member.</span>
+<span class="sd">        complaint_id: The complaint ID from the address.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        A redirect to the complaint.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="n">_run_staff_action</span><span class="p">(</span>
+        <span class="n">request</span><span class="p">,</span> <span class="n">complaint_id</span><span class="p">,</span> <span class="n">accept_complaint</span><span class="p">,</span> <span class="n">MSG_COMPLAINT_ACCEPTED</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="resolve_complaint_view">
+<a class="viewcode-back" href="../../campus.html#campus.views.resolve_complaint_view">[docs]</a>
+<span class="nd">@role_required</span><span class="p">(</span><span class="o">*</span><span class="n">STAFF_ROLES</span><span class="p">)</span>
+<span class="nd">@require_POST</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve_complaint_view</span><span class="p">(</span><span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">,</span> <span class="n">complaint_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Mark an In Progress complaint as Resolved (FR-13).</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        request: The HTTP request of a staff member or supervisor.</span>
+<span class="sd">        complaint_id: The complaint ID from the address.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        A redirect to the complaint.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="n">_run_staff_action</span><span class="p">(</span>
+        <span class="n">request</span><span class="p">,</span> <span class="n">complaint_id</span><span class="p">,</span> <span class="n">resolve_complaint</span><span class="p">,</span> <span class="n">MSG_COMPLAINT_RESOLVED</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="reject_complaint_view">
+<a class="viewcode-back" href="../../campus.html#campus.views.reject_complaint_view">[docs]</a>
+<span class="nd">@never_cache</span>
+<span class="nd">@login_required</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">reject_complaint_view</span><span class="p">(</span><span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">,</span> <span class="n">complaint_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Ask for a reason and reject a complaint (FR-20).</span>
+
+<span class="sd">    Students, faculty members and administrators get the FR-20 message</span>
+<span class="sd">    instead of the general "not authorized" page.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        request: The HTTP request of a logged-in user.</span>
+<span class="sd">        complaint_id: The complaint ID from the address.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        The reason form, or a redirect to the complaint.</span>
+
+<span class="sd">    Raises:</span>
+<span class="sd">        Http404: If there is no complaint with this ID.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="o">.</span><span class="n">role</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">STAFF_ROLES</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_forbidden</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">MSG_ONLY_STAFF_CAN_REJECT</span><span class="p">)</span>
+    <span class="n">form</span> <span class="o">=</span> <span class="n">RejectForm</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">POST</span><span class="p">)</span> <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">method</span> <span class="o">==</span> <span class="s2">"POST"</span> <span class="k">else</span> <span class="n">RejectForm</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">method</span> <span class="o">==</span> <span class="s2">"POST"</span> <span class="ow">and</span> <span class="n">form</span><span class="o">.</span><span class="n">is_valid</span><span class="p">():</span>
+        <span class="k">return</span> <span class="n">_run_staff_action</span><span class="p">(</span>
+            <span class="n">request</span><span class="p">,</span>
+            <span class="n">complaint_id</span><span class="p">,</span>
+            <span class="n">partial</span><span class="p">(</span><span class="n">reject_complaint</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">[</span><span class="s2">"reason"</span><span class="p">]),</span>
+            <span class="n">MSG_COMPLAINT_REJECTED</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">detail</span> <span class="o">=</span> <span class="n">get_staff_complaint_detail</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="p">,</span> <span class="n">complaint_id</span><span class="p">)</span>
+    <span class="k">except</span> <span class="n">ServiceError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">Http404</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">message</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">error</span>
+    <span class="k">return</span> <span class="n">render</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">TEMPLATE_REJECT_COMPLAINT</span><span class="p">,</span> <span class="p">{</span><span class="s2">"form"</span><span class="p">:</span> <span class="n">form</span><span class="p">,</span> <span class="s2">"detail"</span><span class="p">:</span> <span class="n">detail</span><span class="p">})</span></div>
+
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../index.html">FixIt Campus</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">campus</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../index.html">Documentation overview</a><ul>
+  <li><a href="../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, FixIt Campus team.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.2.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>
